@@ -2,7 +2,7 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
-use crate::asn1::PyAsn1Error;
+use crate::error::CryptographyError;
 use pyo3::types::IntoPyDict;
 use pyo3::ToPyObject;
 use std::collections::hash_map::DefaultHasher;
@@ -22,22 +22,22 @@ impl<'a> TLSReader<'a> {
         self.data.is_empty()
     }
 
-    fn read_byte(&mut self) -> Result<u8, PyAsn1Error> {
+    fn read_byte(&mut self) -> Result<u8, CryptographyError> {
         Ok(self.read_exact(1)?[0])
     }
 
-    fn read_exact(&mut self, length: usize) -> Result<&'a [u8], PyAsn1Error> {
+    fn read_exact(&mut self, length: usize) -> Result<&'a [u8], CryptographyError> {
         if length > self.data.len() {
-            return Err(PyAsn1Error::from(pyo3::exceptions::PyValueError::new_err(
-                "Invalid SCT length",
-            )));
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err("Invalid SCT length"),
+            ));
         }
         let (result, data) = self.data.split_at(length);
         self.data = data;
         Ok(result)
     }
 
-    fn read_length_prefixed(&mut self) -> Result<TLSReader<'a>, PyAsn1Error> {
+    fn read_length_prefixed(&mut self) -> Result<TLSReader<'a>, CryptographyError> {
         let length = u16::from_be_bytes(self.read_exact(2)?.try_into().unwrap());
         Ok(TLSReader::new(self.read_exact(length.into())?))
     }
@@ -143,11 +143,31 @@ pub(crate) struct Sct {
 
 #[pyo3::prelude::pymethods]
 impl Sct {
+    fn __richcmp__(
+        &self,
+        other: pyo3::PyRef<'_, Sct>,
+        op: pyo3::basic::CompareOp,
+    ) -> pyo3::PyResult<bool> {
+        match op {
+            pyo3::basic::CompareOp::Eq => Ok(self.sct_data == other.sct_data),
+            pyo3::basic::CompareOp::Ne => Ok(self.sct_data != other.sct_data),
+            _ => Err(pyo3::exceptions::PyTypeError::new_err(
+                "SCTs cannot be ordered",
+            )),
+        }
+    }
+
+    fn __hash__(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.sct_data.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[getter]
     fn version<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
         py.import("cryptography.x509.certificate_transparency")?
-            .getattr(crate::intern!(py, "Version"))?
-            .getattr(crate::intern!(py, "v1"))
+            .getattr(pyo3::intern!(py, "Version"))?
+            .getattr(pyo3::intern!(py, "v1"))
     }
 
     #[getter]
@@ -159,7 +179,7 @@ impl Sct {
     fn timestamp<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
         let datetime_class = py
             .import("datetime")?
-            .getattr(crate::intern!(py, "datetime"))?;
+            .getattr(pyo3::intern!(py, "datetime"))?;
         datetime_class
             .call_method1("utcfromtimestamp", (self.timestamp / 1000,))?
             .call_method(
@@ -173,7 +193,7 @@ impl Sct {
     fn entry_type<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
         let et_class = py
             .import("cryptography.x509.certificate_transparency")?
-            .getattr(crate::intern!(py, "LogEntryType"))?;
+            .getattr(pyo3::intern!(py, "LogEntryType"))?;
         let attr_name = match self.entry_type {
             LogEntryType::Certificate => "X509_CERTIFICATE",
             LogEntryType::PreCertificate => "PRE_CERTIFICATE",
@@ -194,7 +214,7 @@ impl Sct {
     fn signature_algorithm<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
         let sa_class = py
             .import("cryptography.x509.certificate_transparency")?
-            .getattr(crate::intern!(py, "SignatureAlgorithm"))?;
+            .getattr(pyo3::intern!(py, "SignatureAlgorithm"))?;
         sa_class.getattr(self.signature_algorithm.to_attr())
     }
 
@@ -209,34 +229,11 @@ impl Sct {
     }
 }
 
-#[pyo3::prelude::pyproto]
-impl pyo3::PyObjectProtocol for Sct {
-    fn __richcmp__(
-        &self,
-        other: pyo3::PyRef<Sct>,
-        op: pyo3::basic::CompareOp,
-    ) -> pyo3::PyResult<bool> {
-        match op {
-            pyo3::basic::CompareOp::Eq => Ok(self.sct_data == other.sct_data),
-            pyo3::basic::CompareOp::Ne => Ok(self.sct_data != other.sct_data),
-            _ => Err(pyo3::exceptions::PyTypeError::new_err(
-                "SCTs cannot be ordered",
-            )),
-        }
-    }
-
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.sct_data.hash(&mut hasher);
-        hasher.finish()
-    }
-}
-
 pub(crate) fn parse_scts(
     py: pyo3::Python<'_>,
     data: &[u8],
     entry_type: LogEntryType,
-) -> Result<pyo3::PyObject, PyAsn1Error> {
+) -> Result<pyo3::PyObject, CryptographyError> {
     let mut reader = TLSReader::new(data).read_length_prefixed()?;
 
     let py_scts = pyo3::types::PyList::empty(py);
@@ -245,9 +242,9 @@ pub(crate) fn parse_scts(
         let raw_sct_data = sct_data.data.to_vec();
         let version = sct_data.read_byte()?;
         if version != 0 {
-            return Err(PyAsn1Error::from(pyo3::exceptions::PyValueError::new_err(
-                "Invalid SCT version",
-            )));
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err("Invalid SCT version"),
+            ));
         }
         let log_id = sct_data.read_exact(32)?.try_into().unwrap();
         let timestamp = u64::from_be_bytes(sct_data.read_exact(8)?.try_into().unwrap());

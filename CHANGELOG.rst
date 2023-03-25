@@ -1,13 +1,39 @@
 Changelog
 =========
 
-.. _v40-0-0:
+.. _v41-0-0:
 
-40.0.0 - `main`_
+41.0.0 - `main`_
 ~~~~~~~~~~~~~~~~
 
 .. note:: This version is not yet released and is under active development.
 
+* **BACKWARDS INCOMPATIBLE:** Support for OpenSSL less than 1.1.1d has been
+  removed.  Users on older version of OpenSSL will need to upgrade.
+* **BACKWARDS INCOMPATIBLE:** Support for Python 3.6 has been removed.
+* Updated the minimum supported Rust version (MSRV) to 1.56.0, from 1.48.0.
+
+.. _v40-0-1:
+
+40.0.1 - 2023-03-24
+~~~~~~~~~~~~~~~~~~~
+
+* Fixed a bug where certain operations would fail if an object happened to be
+  in the top-half of the memory-space. This only impacted 32-bit systems.
+
+.. _v40-0-0:
+
+40.0.0 - 2023-03-24
+~~~~~~~~~~~~~~~~~~~
+
+
+* **BACKWARDS INCOMPATIBLE:** As announced in the 39.0.0 changelog, the way
+  ``cryptography`` links OpenSSL has changed. This only impacts users who
+  build ``cryptography`` from source (i.e., not from a ``wheel``), and
+  specify their own version of OpenSSL. For those users, the ``CFLAGS``,
+  ``LDFLAGS``, ``INCLUDE``, ``LIB``, and ``CRYPTOGRAPHY_SUPPRESS_LINK_FLAGS``
+  environment variables are no longer valid. Instead, users need to configure
+  their builds `as documented here`_.
 * Support for Python 3.6 is deprecated and will be removed in the next
   release.
 * Deprecated the current minimum supported Rust version (MSRV) of 1.48.0.
@@ -15,6 +41,8 @@ Changelog
   ``pip`` will typically get a wheel and not need Rust installed, but check
   :doc:`/installation` for documentation on installing a newer ``rustc`` if
   required.
+* Deprecated support for OpenSSL less than 1.1.1d. The next release of
+  ``cryptography`` will drop support for older versions.
 * Deprecated support for DSA keys in
   :func:`~cryptography.hazmat.primitives.serialization.load_ssh_public_key`
   and
@@ -23,6 +51,8 @@ Changelog
   :class:`~cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey`
   and
   :class:`~cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey`.
+* The minimum supported version of PyPy3 is now 7.3.10.
+* Updated Windows, macOS, and Linux wheels to be compiled with OpenSSL 3.1.0.
 * Added support for parsing SSH certificates in addition to public keys with
   :func:`~cryptography.hazmat.primitives.serialization.load_ssh_public_identity`.
   :func:`~cryptography.hazmat.primitives.serialization.load_ssh_public_key`
@@ -40,6 +70,40 @@ Changelog
   ``cryptography``, this note is included as a courtesy.
 * The X.509 builder classes now raise ``UnsupportedAlgorithm`` instead of
   ``ValueError`` if an unsupported hash algorithm is passed.
+* Added public union type aliases for type hinting:
+
+  * Asymmetric types:
+    :const:`~cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.asymmetric.types.CertificatePublicKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.asymmetric.types.CertificateIssuerPublicKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.asymmetric.types.CertificateIssuerPrivateKeyTypes`.
+  * SSH keys:
+    :const:`~cryptography.hazmat.primitives.serialization.SSHPublicKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.serialization.SSHPrivateKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.serialization.SSHCertPublicKeyTypes`,
+    :const:`~cryptography.hazmat.primitives.serialization.SSHCertPrivateKeyTypes`.
+  * PKCS12:
+    :const:`~cryptography.hazmat.primitives.serialization.pkcs12.PKCS12PrivateKeyTypes`
+  * PKCS7:
+    :const:`~cryptography.hazmat.primitives.serialization.pkcs7.PKCS7HashTypes`,
+    :const:`~cryptography.hazmat.primitives.serialization.pkcs7.PKCS7PrivateKeyTypes`.
+  * Two-factor:
+    :const:`~cryptography.hazmat.primitives.twofactor.hotp.HOTPHashTypes`
+
+* Deprecated previously undocumented but not private type aliases in the
+  ``cryptography.hazmat.primitives.asymmetric.types`` module in favor of new
+  ones above.
+
+
+.. _v39-0-2:
+
+
+39.0.2 - 2023-03-02
+~~~~~~~~~~~~~~~~~~~
+
+* Fixed a bug where the content type header was not properly encoded for
+  PKCS7 signatures when using the ``Text`` option and ``SMIME`` encoding.
 
 
 .. _v39-0-1:

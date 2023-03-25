@@ -6,6 +6,8 @@ on:
     inputs:
       version:
         description: The version to build
+  # Do not add any non-tag push events without updating pypi-publish.yml. If
+  # you do, it'll upload wheels to PyPI.
   push:
     tags:
       - '*.*'
@@ -14,17 +16,18 @@ on:
     paths:
       - .github/workflows/wheel-builder.yml
       - setup.py
-      - setup.cfg
       - pyproject.toml
       - src/cryptography/__about__.py
 
+env:
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
 
 jobs:
   sdist:
     runs-on: ubuntu-latest
     name: sdists
     steps:
-      - uses: actions/checkout@v3.3.0
+      - uses: actions/checkout@v3.5.0
         with:
           # The tag to build or the tag received by the tag event
           ref: ${{ github.event.inputs.version || github.ref }}
@@ -54,7 +57,7 @@ jobs:
       fail-fast: false
       matrix:
         PYTHON:
-          - { VERSION: "cp36-cp36m", ABI_VERSION: 'cp36' }
+          - { VERSION: "cp37-cp37m", ABI_VERSION: 'cp37' }
           - { VERSION: "pp38-pypy38_pp73" }
           - { VERSION: "pp39-pypy39_pp73" }
         MANYLINUX:
@@ -109,8 +112,8 @@ jobs:
               PY_LIMITED_API="--py-limited-api=${{ matrix.PYTHON.ABI_VERSION }}"
           fi
           cd cryptography*
-          LDFLAGS="-L/opt/pyca/cryptography/openssl/lib -L/opt/pyca/cryptography/openssl/lib64" \
-              CFLAGS="-I/opt/pyca/cryptography/openssl/include -Wl,--exclude-libs,ALL" \
+          OPENSSL_DIR="/opt/pyca/cryptography/openssl" \
+              OPENSSL_STATIC=1 \
               ../.venv/bin/python setup.py bdist_wheel $PY_LIMITED_API && mv dist/cryptography*.whl ../tmpwheelhouse
         env:
           RUSTUP_HOME: /root/.rustup
@@ -141,11 +144,11 @@ jobs:
       fail-fast: false
       matrix:
         PYTHON:
-          - VERSION: '3.10'
-            ABI_VERSION: 'cp36'
+          - VERSION: '3.11'
+            ABI_VERSION: 'cp37'
             # Despite the name, this is built for the macOS 11 SDK on arm64 and 10.9+ on intel
-            DOWNLOAD_URL: 'https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos11.pkg'
-            BIN_PATH: '/Library/Frameworks/Python.framework/Versions/3.10/bin/python3'
+            DOWNLOAD_URL: 'https://www.python.org/ftp/python/3.11.2/python-3.11.2-macos11.pkg'
+            BIN_PATH: '/Library/Frameworks/Python.framework/Versions/3.11/bin/python3'
             DEPLOYMENT_TARGET: '10.12'
             # This archflags is default, but let's be explicit
             ARCHFLAGS: '-arch x86_64 -arch arm64'
@@ -153,10 +156,10 @@ jobs:
             # This will change in the future as we change the base Python we
             # build against
             _PYTHON_HOST_PLATFORM: 'macosx-10.9-universal2'
-          - VERSION: '3.10'
-            ABI_VERSION: 'cp36'
-            DOWNLOAD_URL: 'https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos11.pkg'
-            BIN_PATH: '/Library/Frameworks/Python.framework/Versions/3.10/bin/python3'
+          - VERSION: '3.11'
+            ABI_VERSION: 'cp37'
+            DOWNLOAD_URL: 'https://www.python.org/ftp/python/3.11.2/python-3.11.2-macos11.pkg'
+            BIN_PATH: '/Library/Frameworks/Python.framework/Versions/3.11/bin/python3'
             DEPLOYMENT_TARGET: '10.12'
             # We continue to build a non-universal2 for a bit to see metrics on
             # download counts (this is a proxy for pip version since universal2
@@ -175,12 +178,6 @@ jobs:
             ARCHFLAGS: '-arch x86_64'
     name: "${{ matrix.PYTHON.VERSION }} ABI ${{ matrix.PYTHON.ABI_VERSION }} macOS ${{ matrix.PYTHON.ARCHFLAGS }}"
     steps:
-      # Needed for download_openssl.py
-      - uses: actions/checkout@v3.3.0
-        with:
-          # The tag to build or the tag received by the tag event
-          ref: ${{ github.event.inputs.version || github.ref }}
-          persist-credentials: false
       - uses: actions/download-artifact@v3.0.2
         with:
           name: cryptography-sdist
@@ -197,12 +194,15 @@ jobs:
         with:
           python-version: ${{ matrix.PYTHON.VERSION }}
         if: contains(matrix.PYTHON.VERSION, 'pypy')
-      - run: ${{ matrix.PYTHON.BIN_PATH }} -m pip install -c ci-constraints-requirements.txt -U requests
-      - name: Download OpenSSL
-        run: |
-            ${{ matrix.PYTHON.BIN_PATH }} .github/workflows/download_openssl.py macos openssl-macos-universal2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dawidd6/action-download-artifact@5e780fc7bbd0cac69fc73271ed86edf5dcb72d67
+        with:
+          repo: pyca/infra
+          workflow: build-macos-openssl.yml
+          branch: main
+          workflow_conclusion: success
+          name: openssl-macos-universal2
+          path: "../openssl-macos-universal2/"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@52e69531e6f69a396bc9d1226284493a5db969ff
         with:
           toolchain: stable
@@ -215,9 +215,8 @@ jobs:
       - name: Build the wheel
         run: |
           cd cryptography*
-          CRYPTOGRAPHY_SUPPRESS_LINK_FLAGS="1" \
-              LDFLAGS="${HOME}/openssl-macos-universal2/lib/libcrypto.a ${HOME}/openssl-macos-universal2/lib/libssl.a" \
-              CFLAGS="-I${HOME}/openssl-macos-universal2/include" \
+          OPENSSL_DIR="$(readlink -f ../../openssl-macos-universal2/)" \
+              OPENSSL_STATIC=1 \
               ../venv/bin/python setup.py bdist_wheel --py-limited-api=${{ matrix.PYTHON.ABI_VERSION }} && mv dist/cryptography*.whl ../wheelhouse
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.PYTHON.DEPLOYMENT_TARGET }}
@@ -249,7 +248,7 @@ jobs:
           - {ARCH: 'x86', WINDOWS: 'win32', RUST_TRIPLE: 'i686-pc-windows-msvc'}
           - {ARCH: 'x64', WINDOWS: 'win64', RUST_TRIPLE: 'x86_64-pc-windows-msvc'}
         PYTHON:
-          - {VERSION: "3.8", "ABI_VERSION": "cp36"}
+          - {VERSION: "3.11", "ABI_VERSION": "cp37"}
           - {VERSION: "pypy-3.8"}
           - {VERSION: "pypy-3.9"}
         exclude:
@@ -260,12 +259,6 @@ jobs:
             PYTHON: {VERSION: "pypy-3.9"}
     name: "${{ matrix.PYTHON.VERSION }} ${{ matrix.WINDOWS.WINDOWS }} ${{ matrix.PYTHON.ABI_VERSION }}"
     steps:
-      # Needed for download_openssl.py
-      - uses: actions/checkout@v3.3.0
-        with:
-          # The tag to build or the tag received by the tag event
-          ref: ${{ github.event.inputs.version || github.ref }}
-          persist-credentials: false
       - uses: actions/download-artifact@v3.0.2
         with:
           name: cryptography-sdist
@@ -280,14 +273,19 @@ jobs:
           toolchain: stable
           target: ${{ matrix.WINDOWS.RUST_TRIPLE }}
 
-      - run: pip install -c ci-constraints-requirements.txt requests
-      - name: Download OpenSSL
+      - uses: dawidd6/action-download-artifact@5e780fc7bbd0cac69fc73271ed86edf5dcb72d67
+        with:
+          repo: pyca/infra
+          workflow: build-windows-openssl.yml
+          branch: main
+          workflow_conclusion: success
+          name: "openssl-${{ matrix.WINDOWS.WINDOWS }}"
+          path: "C:/openssl-${{ matrix.WINDOWS.WINDOWS }}/"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure OpenSSL
         run: |
-            python .github/workflows/download_openssl.py windows openssl-${{ matrix.WINDOWS.WINDOWS }}
-            echo "INCLUDE=C:/openssl-${{ matrix.WINDOWS.WINDOWS }}/include;$INCLUDE" >> $GITHUB_ENV
-            echo "LIB=C:/openssl-${{ matrix.WINDOWS.WINDOWS }}/lib;$LIB" >> $GITHUB_ENV
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            echo "OPENSSL_DIR=C:/openssl-${{ matrix.WINDOWS.WINDOWS }}" >> $GITHUB_ENV
+            echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
         shell: bash
 
       - run: python -m pip install -U pip wheel

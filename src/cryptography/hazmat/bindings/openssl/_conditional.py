@@ -5,12 +5,6 @@
 import typing
 
 
-def cryptography_has_ec2m() -> typing.List[str]:
-    return [
-        "EC_POINT_get_affine_coordinates_GF2m",
-    ]
-
-
 def cryptography_has_set_cert_cb() -> typing.List[str]:
     return [
         "SSL_CTX_set_cert_cb",
@@ -168,7 +162,6 @@ def cryptography_has_engine() -> typing.List[str]:
         "ENGINE_ctrl_cmd",
         "ENGINE_free",
         "ENGINE_get_name",
-        "Cryptography_add_osrandom_engine",
         "ENGINE_ctrl_cmd_string",
         "ENGINE_load_builtin_engines",
         "ENGINE_load_private_key",
@@ -277,13 +270,16 @@ def cryptography_has_get_extms_support() -> typing.List[str]:
     return ["SSL_get_extms_support"]
 
 
+def cryptography_has_evp_pkey_set_peer_ex() -> typing.List[str]:
+    return ["EVP_PKEY_derive_set_peer_ex"]
+
+
 # This is a mapping of
 # {condition: function-returning-names-dependent-on-that-condition} so we can
 # loop over them and delete unsupported names at runtime. It will be removed
 # when cffi supports #if in cdef. We use functions instead of just a dict of
 # lists so we can use coverage to measure which are used.
 CONDITIONAL_NAMES = {
-    "Cryptography_HAS_EC2M": cryptography_has_ec2m,
     "Cryptography_HAS_SET_CERT_CB": cryptography_has_set_cert_cb,
     "Cryptography_HAS_SSL_ST": cryptography_has_ssl_st,
     "Cryptography_HAS_TLS_ST": cryptography_has_tls_st,
@@ -329,4 +325,7 @@ CONDITIONAL_NAMES = {
         cryptography_has_ssl_op_ignore_unexpected_eof
     ),
     "Cryptography_HAS_GET_EXTMS_SUPPORT": cryptography_has_get_extms_support,
+    "Cryptography_HAS_EVP_PKEY_SET_PEER_EX": (
+        cryptography_has_evp_pkey_set_peer_ex
+    ),
 }

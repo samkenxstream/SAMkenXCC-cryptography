@@ -5,9 +5,6 @@
 
 import itertools
 import os
-import subprocess
-import sys
-import textwrap
 
 import pytest
 
@@ -28,12 +25,16 @@ from ...doubles import (
     DummyHashAlgorithm,
     DummyMode,
 )
+from ...hazmat.primitives.test_rsa import rsa_key_512, rsa_key_2048
 from ...utils import (
     load_nist_vectors,
     load_vectors_from_file,
     raises_unsupported_algorithm,
 )
-from ..primitives.fixtures_rsa import RSA_KEY_512, RSA_KEY_2048
+
+# Make ruff happy since we're importing fixtures that pytest patches in as
+# func args
+__all__ = ["rsa_key_512", "rsa_key_2048"]
 
 
 def skip_if_libre_ssl(openssl_version):
@@ -175,158 +176,6 @@ class TestOpenSSL:
         assert backend._bn_to_int(bn) == 0
 
 
-@pytest.mark.skipif(
-    not backend._lib.CRYPTOGRAPHY_NEEDS_OSRANDOM_ENGINE,
-    reason="Requires OpenSSL with ENGINE support and OpenSSL < 1.1.1d",
-)
-@pytest.mark.skip_fips(reason="osrandom engine disabled for FIPS")
-class TestOpenSSLRandomEngine:
-    def setup_method(self):
-        # The default RAND engine is global and shared between
-        # tests. We make sure that the default engine is osrandom
-        # before we start each test and restore the global state to
-        # that engine in teardown.
-        current_default = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(current_default)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-
-    def teardown_method(self):
-        # we need to reset state to being default. backend is a shared global
-        # for all these tests.
-        backend.activate_osrandom_engine()
-        current_default = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(current_default)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-
-    @pytest.mark.skipif(
-        sys.executable is None, reason="No Python interpreter available."
-    )
-    def test_osrandom_engine_is_default(self, tmpdir):
-        engine_printer = textwrap.dedent(
-            """
-            import sys
-            from cryptography.hazmat.backends.openssl.backend import backend
-
-            e = backend._lib.ENGINE_get_default_RAND()
-            name = backend._lib.ENGINE_get_name(e)
-            sys.stdout.write(backend._ffi.string(name).decode('ascii'))
-            res = backend._lib.ENGINE_free(e)
-            assert res == 1
-            """
-        )
-        engine_name = tmpdir.join("engine_name")
-
-        # If we're running tests via ``python setup.py test`` in a clean
-        # environment then all of our dependencies are going to be installed
-        # into either the current directory or the .eggs directory. However the
-        # subprocess won't know to activate these dependencies, so we'll get it
-        # to do so by passing our entire sys.path into the subprocess via the
-        # PYTHONPATH environment variable.
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(sys.path)
-
-        with engine_name.open("w") as out:
-            subprocess.check_call(
-                [sys.executable, "-c", engine_printer],
-                env=env,
-                stdout=out,
-                stderr=subprocess.PIPE,
-            )
-
-        osrandom_engine_name = backend._ffi.string(
-            backend._lib.Cryptography_osrandom_engine_name
-        )
-
-        assert engine_name.read().encode("ascii") == osrandom_engine_name
-
-    def test_osrandom_sanity_check(self):
-        # This test serves as a check against catastrophic failure.
-        buf = backend._ffi.new("unsigned char[]", 500)
-        res = backend._lib.RAND_bytes(buf, 500)
-        assert res == 1
-        assert backend._ffi.buffer(buf)[:] != "\x00" * 500
-
-    def test_activate_osrandom_no_default(self):
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-        backend.activate_osrandom_engine()
-        e = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-
-    def test_activate_builtin_random(self):
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e != backend._ffi.NULL
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-
-    def test_activate_builtin_random_already_active(self):
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-
-    def test_osrandom_engine_implementation(self):
-        name = backend.osrandom_engine_implementation()
-        assert name in [
-            "/dev/urandom",
-            "CryptGenRandom",
-            "getentropy",
-            "getrandom",
-        ]
-        if sys.platform.startswith("linux"):
-            assert name in ["getrandom", "/dev/urandom"]
-        if sys.platform == "darwin":
-            assert name in ["getentropy"]
-        if sys.platform == "win32":
-            assert name == "CryptGenRandom"
-
-    def test_activate_osrandom_already_default(self):
-        e = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-        backend.activate_osrandom_engine()
-        e = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-
-
-@pytest.mark.skipif(
-    backend._lib.CRYPTOGRAPHY_NEEDS_OSRANDOM_ENGINE,
-    reason="Requires OpenSSL without ENGINE support or OpenSSL >=1.1.1d",
-)
-class TestOpenSSLNoEngine:
-    def test_no_engine_support(self):
-        assert (
-            backend._ffi.string(backend._lib.Cryptography_osrandom_engine_id)
-            == b"no-engine-support"
-        )
-        assert (
-            backend._ffi.string(backend._lib.Cryptography_osrandom_engine_name)
-            == b"osrandom_engine disabled"
-        )
-
-    def test_activate_builtin_random_does_nothing(self):
-        backend.activate_builtin_random()
-
-    def test_activate_osrandom_does_nothing(self):
-        backend.activate_osrandom_engine()
-
-
 class TestOpenSSLRSA:
     def test_generate_rsa_parameters_supported(self):
         assert backend.generate_rsa_parameters_supported(1, 1024) is False
@@ -433,10 +282,9 @@ class TestOpenSSLRSA:
             is False
         )
 
-    def test_unsupported_mgf1_hash_algorithm_md5_decrypt(self):
-        private_key = RSA_KEY_512.private_key(backend)
+    def test_unsupported_mgf1_hash_algorithm_md5_decrypt(self, rsa_key_512):
         with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_PADDING):
-            private_key.decrypt(
+            rsa_key_512.decrypt(
                 b"0" * 64,
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.MD5()),
@@ -516,11 +364,10 @@ class TestOpenSSLEllipticCurve:
 
 
 class TestRSAPEMSerialization:
-    def test_password_length_limit(self):
+    def test_password_length_limit(self, rsa_key_2048):
         password = b"x" * 1024
-        key = RSA_KEY_2048.private_key(backend)
         with pytest.raises(ValueError):
-            key.private_bytes(
+            rsa_key_2048.private_bytes(
                 serialization.Encoding.PEM,
                 serialization.PrivateFormat.PKCS8,
                 serialization.BestAvailableEncryption(password),

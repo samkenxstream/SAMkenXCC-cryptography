@@ -2,7 +2,7 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
-use crate::asn1::PyAsn1Result;
+use crate::error::CryptographyResult;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -14,7 +14,7 @@ pub(crate) struct ObjectIdentifier {
 #[pyo3::pymethods]
 impl ObjectIdentifier {
     #[new]
-    fn new(value: &str) -> PyAsn1Result<Self> {
+    fn new(value: &str) -> CryptographyResult<Self> {
         let oid = asn1::ObjectIdentifier::from_string(value)
             .ok_or_else(|| asn1::ParseError::new(asn1::ParseErrorKind::InvalidValue))?;
         Ok(ObjectIdentifier { oid })
@@ -32,21 +32,15 @@ impl ObjectIdentifier {
     ) -> pyo3::PyResult<&'p pyo3::PyAny> {
         let oid_names = py
             .import("cryptography.hazmat._oid")?
-            .getattr(crate::intern!(py, "_OID_NAMES"))?;
+            .getattr(pyo3::intern!(py, "_OID_NAMES"))?;
         oid_names.call_method1("get", (slf, "Unknown OID"))
     }
 
     fn __deepcopy__(slf: pyo3::PyRef<'_, Self>, _memo: pyo3::PyObject) -> pyo3::PyRef<'_, Self> {
         slf
     }
-}
 
-#[pyo3::prelude::pyproto]
-impl pyo3::PyObjectProtocol for ObjectIdentifier {
-    fn __repr__(&self) -> pyo3::PyResult<String> {
-        let gil = pyo3::Python::acquire_gil();
-        let py = gil.python();
-
+    fn __repr__(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<String> {
         let self_clone = pyo3::PyCell::new(
             py,
             ObjectIdentifier {
@@ -62,7 +56,7 @@ impl pyo3::PyObjectProtocol for ObjectIdentifier {
 
     fn __richcmp__(
         &self,
-        other: pyo3::PyRef<ObjectIdentifier>,
+        other: pyo3::PyRef<'_, ObjectIdentifier>,
         op: pyo3::basic::CompareOp,
     ) -> pyo3::PyResult<bool> {
         match op {

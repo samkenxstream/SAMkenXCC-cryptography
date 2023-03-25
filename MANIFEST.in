@@ -3,7 +3,6 @@ include CONTRIBUTING.rst
 include LICENSE
 include LICENSE.APACHE
 include LICENSE.BSD
-include LICENSE.PSF
 include README.rst
 include tox.ini
 
@@ -17,6 +16,8 @@ prune docs/_build
 recursive-include tests *.py
 exclude vectors
 recursive-exclude vectors *
+exclude src/rust/target
+recursive-exclude src/rust/target *
 
 recursive-exclude .github *
 

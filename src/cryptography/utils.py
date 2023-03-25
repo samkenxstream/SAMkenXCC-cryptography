@@ -21,7 +21,6 @@ class CryptographyDeprecationWarning(UserWarning):
 # cycle ends.
 DeprecatedIn36 = CryptographyDeprecationWarning
 DeprecatedIn37 = CryptographyDeprecationWarning
-DeprecatedIn39 = CryptographyDeprecationWarning
 DeprecatedIn40 = CryptographyDeprecationWarning
 
 
@@ -41,6 +40,13 @@ def int_to_bytes(integer: int, length: typing.Optional[int] = None) -> bytes:
     return integer.to_bytes(
         length or (integer.bit_length() + 7) // 8 or 1, "big"
     )
+
+
+def _extract_buffer_length(obj: typing.Any) -> typing.Tuple[int, int]:
+    from cryptography.hazmat.bindings._rust import _openssl
+
+    buf = _openssl.ffi.from_buffer(obj)
+    return int(_openssl.ffi.cast("uintptr_t", buf)), len(buf)
 
 
 class InterfaceNotImplemented(Exception):

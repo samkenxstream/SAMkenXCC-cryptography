@@ -2,7 +2,8 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
-use crate::asn1::{big_byte_slice_to_py_int, oid_to_py_oid, PyAsn1Error, PyAsn1Result};
+use crate::asn1::{big_byte_slice_to_py_int, oid_to_py_oid};
+use crate::error::{CryptographyError, CryptographyResult};
 use crate::x509;
 use crate::x509::{certificate, crl, extensions, ocsp, oid, py_to_chrono, sct};
 use chrono::Timelike;
@@ -11,7 +12,10 @@ use std::sync::Arc;
 const BASIC_RESPONSE_OID: asn1::ObjectIdentifier = asn1::oid!(1, 3, 6, 1, 5, 5, 7, 48, 1, 1);
 
 #[pyo3::prelude::pyfunction]
-fn load_der_ocsp_response(_py: pyo3::Python<'_>, data: &[u8]) -> Result<OCSPResponse, PyAsn1Error> {
+fn load_der_ocsp_response(
+    _py: pyo3::Python<'_>,
+    data: &[u8],
+) -> Result<OCSPResponse, CryptographyError> {
     let raw = OwnedRawOCSPResponse::try_new(Arc::from(data), |data| asn1::parse_single(data))?;
 
     let response = raw.borrow_value();
@@ -19,15 +23,19 @@ fn load_der_ocsp_response(_py: pyo3::Python<'_>, data: &[u8]) -> Result<OCSPResp
         SUCCESSFUL_RESPONSE => match response.response_bytes {
             Some(ref bytes) => {
                 if bytes.response_type != BASIC_RESPONSE_OID {
-                    return Err(PyAsn1Error::from(pyo3::exceptions::PyValueError::new_err(
-                        "Successful OCSP response does not contain a BasicResponse",
-                    )));
+                    return Err(CryptographyError::from(
+                        pyo3::exceptions::PyValueError::new_err(
+                            "Successful OCSP response does not contain a BasicResponse",
+                        ),
+                    ));
                 }
             }
             None => {
-                return Err(PyAsn1Error::from(pyo3::exceptions::PyValueError::new_err(
-                    "Successful OCSP response does not contain a BasicResponse",
-                )))
+                return Err(CryptographyError::from(
+                    pyo3::exceptions::PyValueError::new_err(
+                        "Successful OCSP response does not contain a BasicResponse",
+                    ),
+                ))
             }
         },
         MALFORMED_REQUEST_RESPOSNE
@@ -36,9 +44,9 @@ fn load_der_ocsp_response(_py: pyo3::Python<'_>, data: &[u8]) -> Result<OCSPResp
         | SIG_REQUIRED_RESPONSE
         | UNAUTHORIZED_RESPONSE => {}
         _ => {
-            return Err(PyAsn1Error::from(pyo3::exceptions::PyValueError::new_err(
-                "OCSP response has an unknown status code",
-            )))
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err("OCSP response has an unknown status code"),
+            ))
         }
     };
     Ok(OCSPResponse {
@@ -86,7 +94,7 @@ const UNAUTHORIZED_RESPONSE: u32 = 6;
 #[pyo3::prelude::pymethods]
 impl OCSPResponse {
     #[getter]
-    fn responses(&self) -> Result<OCSPResponseIterator, PyAsn1Error> {
+    fn responses(&self) -> Result<OCSPResponseIterator, CryptographyError> {
         self.requires_successful_response()?;
         Ok(OCSPResponseIterator {
             contents: OwnedOCSPResponseIteratorData::try_new(Arc::clone(&self.raw), |v| {
@@ -125,7 +133,7 @@ impl OCSPResponse {
             "UNAUTHORIZED"
         };
         py.import("cryptography.x509.ocsp")?
-            .getattr(crate::intern!(py, "OCSPResponseStatus"))?
+            .getattr(pyo3::intern!(py, "OCSPResponseStatus"))?
             .getattr(attr)
     }
 
@@ -163,10 +171,10 @@ impl OCSPResponse {
     fn signature_hash_algorithm<'p>(
         &self,
         py: pyo3::Python<'p>,
-    ) -> Result<&'p pyo3::PyAny, PyAsn1Error> {
+    ) -> Result<&'p pyo3::PyAny, CryptographyError> {
         let sig_oids_to_hash = py
             .import("cryptography.hazmat._oid")?
-            .getattr(crate::intern!(py, "_SIG_OIDS_TO_HASH"))?;
+            .getattr(pyo3::intern!(py, "_SIG_OIDS_TO_HASH"))?;
         let hash_alg = sig_oids_to_hash.get_item(self.signature_algorithm_oid(py)?);
         match hash_alg {
             Ok(data) => Ok(data),
@@ -175,7 +183,7 @@ impl OCSPResponse {
                     "Signature algorithm OID: {} not recognized",
                     self.requires_successful_response()?.signature_algorithm.oid
                 );
-                Err(PyAsn1Error::from(pyo3::PyErr::from_instance(
+                Err(CryptographyError::from(pyo3::PyErr::from_value(
                     py.import("cryptography.exceptions")?
                         .call_method1("UnsupportedAlgorithm", (exc_messsage,))?,
                 )))
@@ -193,14 +201,14 @@ impl OCSPResponse {
     fn tbs_response_bytes<'p>(
         &self,
         py: pyo3::Python<'p>,
-    ) -> PyAsn1Result<&'p pyo3::types::PyBytes> {
+    ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
         let resp = self.requires_successful_response()?;
         let result = asn1::write_single(&resp.tbs_response_data)?;
         Ok(pyo3::types::PyBytes::new(py, &result))
     }
 
     #[getter]
-    fn certificates<'p>(&self, py: pyo3::Python<'p>) -> Result<&'p pyo3::PyAny, PyAsn1Error> {
+    fn certificates<'p>(&self, py: pyo3::Python<'p>) -> Result<&'p pyo3::PyAny, CryptographyError> {
         let resp = self.requires_successful_response()?;
         let py_certs = pyo3::types::PyList::empty(py);
         let certs = match &resp.certs {
@@ -242,21 +250,24 @@ impl OCSPResponse {
     }
 
     #[getter]
-    fn issuer_key_hash(&self) -> Result<&[u8], PyAsn1Error> {
+    fn issuer_key_hash(&self) -> Result<&[u8], CryptographyError> {
         let resp = self.requires_successful_response()?;
         let single_resp = resp.single_response()?;
         Ok(single_resp.cert_id.issuer_key_hash)
     }
 
     #[getter]
-    fn issuer_name_hash(&self) -> Result<&[u8], PyAsn1Error> {
+    fn issuer_name_hash(&self) -> Result<&[u8], CryptographyError> {
         let resp = self.requires_successful_response()?;
         let single_resp = resp.single_response()?;
         Ok(single_resp.cert_id.issuer_name_hash)
     }
 
     #[getter]
-    fn hash_algorithm<'p>(&self, py: pyo3::Python<'p>) -> Result<&'p pyo3::PyAny, PyAsn1Error> {
+    fn hash_algorithm<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> Result<&'p pyo3::PyAny, CryptographyError> {
         let resp = self.requires_successful_response()?;
         let single_resp = resp.single_response()?;
         single_resp.py_hash_algorithm(py)
@@ -276,7 +287,7 @@ impl OCSPResponse {
     }
 
     #[getter]
-    fn revocation_reason<'p>(&self, py: pyo3::Python<'p>) -> PyAsn1Result<&'p pyo3::PyAny> {
+    fn revocation_reason<'p>(&self, py: pyo3::Python<'p>) -> CryptographyResult<&'p pyo3::PyAny> {
         let resp = self.requires_successful_response()?;
         let single_resp = resp.single_response()?;
         single_resp.py_revocation_reason(py)
@@ -354,7 +365,7 @@ impl OCSPResponse {
                     let scts = sct::parse_scts(py, contents, sct::LogEntryType::Certificate)?;
                     Ok(Some(
                         x509_module
-                            .getattr(crate::intern!(py, "SignedCertificateTimestamps"))?
+                            .getattr(pyo3::intern!(py, "SignedCertificateTimestamps"))?
                             .call1((scts,))?,
                     ))
                 }
@@ -367,12 +378,12 @@ impl OCSPResponse {
         &self,
         py: pyo3::Python<'p>,
         encoding: &pyo3::PyAny,
-    ) -> PyAsn1Result<&'p pyo3::types::PyBytes> {
+    ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
         let der = py
             .import("cryptography.hazmat.primitives.serialization")?
-            .getattr(crate::intern!(py, "Encoding"))?
-            .getattr(crate::intern!(py, "DER"))?;
-        if encoding != der {
+            .getattr(pyo3::intern!(py, "Encoding"))?
+            .getattr(pyo3::intern!(py, "DER"))?;
+        if !encoding.is(der) {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "The only allowed encoding value is Encoding.DER",
             )
@@ -443,12 +454,12 @@ struct BasicOCSPResponse<'a> {
 }
 
 impl BasicOCSPResponse<'_> {
-    fn single_response(&self) -> Result<SingleResponse<'_>, PyAsn1Error> {
+    fn single_response(&self) -> Result<SingleResponse<'_>, CryptographyError> {
         let responses = self.tbs_response_data.responses.unwrap_read();
         let num_responses = responses.len();
 
         if num_responses != 1 {
-            return Err(PyAsn1Error::from(
+            return Err(CryptographyError::from(
                 pyo3::exceptions::PyValueError::new_err(format!(
                     "OCSP response contains {} SINGLERESP structures.  Use .response_iter to iterate through them",
                     num_responses
@@ -507,19 +518,22 @@ impl SingleResponse<'_> {
             CertStatus::Unknown(_) => "UNKNOWN",
         };
         py.import("cryptography.x509.ocsp")?
-            .getattr(crate::intern!(py, "OCSPCertStatus"))?
+            .getattr(pyo3::intern!(py, "OCSPCertStatus"))?
             .getattr(attr)
     }
 
-    fn py_hash_algorithm<'p>(&self, py: pyo3::Python<'p>) -> Result<&'p pyo3::PyAny, PyAsn1Error> {
+    fn py_hash_algorithm<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> Result<&'p pyo3::PyAny, CryptographyError> {
         let hashes = py.import("cryptography.hazmat.primitives.hashes")?;
         match ocsp::OIDS_TO_HASH.get(&self.cert_id.hash_algorithm.oid) {
-            Some(alg_name) => Ok(hashes.getattr(alg_name)?.call0()?),
+            Some(alg_name) => Ok(hashes.getattr(*alg_name)?.call0()?),
             None => {
                 let exceptions = py.import("cryptography.exceptions")?;
-                Err(PyAsn1Error::from(pyo3::PyErr::from_instance(
+                Err(CryptographyError::from(pyo3::PyErr::from_value(
                     exceptions
-                        .getattr(crate::intern!(py, "UnsupportedAlgorithm"))?
+                        .getattr(pyo3::intern!(py, "UnsupportedAlgorithm"))?
                         .call1((format!(
                             "Signature algorithm OID: {} not recognized",
                             self.cert_id.hash_algorithm.oid
@@ -540,7 +554,10 @@ impl SingleResponse<'_> {
         }
     }
 
-    fn py_revocation_reason<'p>(&self, py: pyo3::Python<'p>) -> PyAsn1Result<&'p pyo3::PyAny> {
+    fn py_revocation_reason<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> CryptographyResult<&'p pyo3::PyAny> {
         match &self.cert_status {
             CertStatus::Revoked(revoked_info) => match revoked_info.revocation_reason {
                 Some(ref v) => crl::parse_crl_reason_flags(py, v),
@@ -584,9 +601,9 @@ fn create_ocsp_response(
     builder: &pyo3::PyAny,
     private_key: &pyo3::PyAny,
     hash_algorithm: &pyo3::PyAny,
-) -> PyAsn1Result<OCSPResponse> {
+) -> CryptographyResult<OCSPResponse> {
     let response_status = status
-        .getattr(crate::intern!(py, "value"))?
+        .getattr(pyo3::intern!(py, "value"))?
         .extract::<u32>()?;
 
     let py_cert: pyo3::PyRef<'_, x509::Certificate>;
@@ -596,41 +613,39 @@ fn create_ocsp_response(
     let response_bytes = if response_status == SUCCESSFUL_RESPONSE {
         let ocsp_mod = py.import("cryptography.x509.ocsp")?;
 
-        let py_single_resp = builder.getattr(crate::intern!(py, "_response"))?;
+        let py_single_resp = builder.getattr(pyo3::intern!(py, "_response"))?;
         py_cert = py_single_resp
-            .getattr(crate::intern!(py, "_cert"))?
+            .getattr(pyo3::intern!(py, "_cert"))?
             .extract()?;
         py_issuer = py_single_resp
-            .getattr(crate::intern!(py, "_issuer"))?
+            .getattr(pyo3::intern!(py, "_issuer"))?
             .extract()?;
-        let py_cert_hash_algorithm = py_single_resp.getattr(crate::intern!(py, "_algorithm"))?;
+        let py_cert_hash_algorithm = py_single_resp.getattr(pyo3::intern!(py, "_algorithm"))?;
         let (responder_cert, responder_encoding): (&pyo3::PyCell<x509::Certificate>, &pyo3::PyAny) =
             builder
-                .getattr(crate::intern!(py, "_responder_id"))?
+                .getattr(pyo3::intern!(py, "_responder_id"))?
                 .extract()?;
 
-        let py_cert_status = py_single_resp.getattr(crate::intern!(py, "_cert_status"))?;
-        let cert_status = if py_cert_status
-            == ocsp_mod
-                .getattr(crate::intern!(py, "OCSPCertStatus"))?
-                .getattr(crate::intern!(py, "GOOD"))?
+        let py_cert_status = py_single_resp.getattr(pyo3::intern!(py, "_cert_status"))?;
+        let cert_status = if py_cert_status.is(ocsp_mod
+            .getattr(pyo3::intern!(py, "OCSPCertStatus"))?
+            .getattr(pyo3::intern!(py, "GOOD"))?)
         {
             CertStatus::Good(())
-        } else if py_cert_status
-            == ocsp_mod
-                .getattr(crate::intern!(py, "OCSPCertStatus"))?
-                .getattr(crate::intern!(py, "UNKNOWN"))?
+        } else if py_cert_status.is(ocsp_mod
+            .getattr(pyo3::intern!(py, "OCSPCertStatus"))?
+            .getattr(pyo3::intern!(py, "UNKNOWN"))?)
         {
             CertStatus::Unknown(())
         } else {
             let revocation_reason = if !py_single_resp
-                .getattr(crate::intern!(py, "_revocation_reason"))?
+                .getattr(pyo3::intern!(py, "_revocation_reason"))?
                 .is_none()
             {
                 let value = py
                     .import("cryptography.hazmat.backends.openssl.decode_asn1")?
-                    .getattr(crate::intern!(py, "_CRL_ENTRY_REASON_ENUM_TO_CODE"))?
-                    .get_item(py_single_resp.getattr(crate::intern!(py, "_revocation_reason"))?)?
+                    .getattr(pyo3::intern!(py, "_CRL_ENTRY_REASON_ENUM_TO_CODE"))?
+                    .get_item(py_single_resp.getattr(pyo3::intern!(py, "_revocation_reason"))?)?
                     .extract::<u32>()?;
                 Some(asn1::Enumerated::new(value))
             } else {
@@ -638,7 +653,7 @@ fn create_ocsp_response(
             };
             // REVOKED
             let py_revocation_time =
-                py_single_resp.getattr(crate::intern!(py, "_revocation_time"))?;
+                py_single_resp.getattr(pyo3::intern!(py, "_revocation_time"))?;
             let revocation_time =
                 asn1::GeneralizedTime::new(py_to_chrono(py, py_revocation_time)?)?;
             CertStatus::Revoked(RevokedInfo {
@@ -647,10 +662,10 @@ fn create_ocsp_response(
             })
         };
         let next_update = if !py_single_resp
-            .getattr(crate::intern!(py, "_next_update"))?
+            .getattr(pyo3::intern!(py, "_next_update"))?
             .is_none()
         {
-            let py_next_update = py_single_resp.getattr(crate::intern!(py, "_next_update"))?;
+            let py_next_update = py_single_resp.getattr(pyo3::intern!(py, "_next_update"))?;
             Some(asn1::GeneralizedTime::new(py_to_chrono(
                 py,
                 py_next_update,
@@ -658,7 +673,7 @@ fn create_ocsp_response(
         } else {
             None
         };
-        let py_this_update = py_single_resp.getattr(crate::intern!(py, "_this_update"))?;
+        let py_this_update = py_single_resp.getattr(pyo3::intern!(py, "_this_update"))?;
         let this_update = asn1::GeneralizedTime::new(py_to_chrono(py, py_this_update)?)?;
 
         let responses = vec![SingleResponse {
@@ -670,14 +685,13 @@ fn create_ocsp_response(
         }];
 
         borrowed_cert = responder_cert.borrow();
-        let responder_id = if responder_encoding
-            == ocsp_mod
-                .getattr(crate::intern!(py, "OCSPResponderEncoding"))?
-                .getattr(crate::intern!(py, "HASH"))?
+        let responder_id = if responder_encoding.is(ocsp_mod
+            .getattr(pyo3::intern!(py, "OCSPResponderEncoding"))?
+            .getattr(pyo3::intern!(py, "HASH"))?)
         {
             let sha1 = py
                 .import("cryptography.hazmat.primitives.hashes")?
-                .getattr(crate::intern!(py, "SHA1"))?
+                .getattr(pyo3::intern!(py, "SHA1"))?
                 .call0()?;
             ResponderId::ByKey(ocsp::hash_data(
                 py,
@@ -712,7 +726,7 @@ fn create_ocsp_response(
             )),
             response_extensions: x509::common::encode_extensions(
                 py,
-                builder.getattr(crate::intern!(py, "_extensions"))?,
+                builder.getattr(pyo3::intern!(py, "_extensions"))?,
                 extensions::encode_extension,
             )?,
         };
@@ -722,7 +736,7 @@ fn create_ocsp_response(
         let signature = x509::sign::sign_data(py, private_key, hash_algorithm, &tbs_bytes)?;
 
         py.import("cryptography.hazmat.backends.openssl.backend")?
-            .getattr(crate::intern!(py, "backend"))?
+            .getattr(pyo3::intern!(py, "backend"))?
             .call_method1(
                 "_check_keys_correspond",
                 (
@@ -731,7 +745,7 @@ fn create_ocsp_response(
                 ),
             )?;
 
-        py_certs = builder.getattr(crate::intern!(py, "_certs"))?.extract()?;
+        py_certs = builder.getattr(pyo3::intern!(py, "_certs"))?.extract()?;
         let certs = py_certs.as_ref().map(|py_certs| {
             x509::Asn1ReadableOrWritable::new_write(asn1::SequenceOfWriter::new(
                 py_certs
@@ -784,15 +798,15 @@ struct OCSPResponseIterator {
     contents: OwnedOCSPResponseIteratorData,
 }
 
-#[pyo3::prelude::pyproto]
-impl pyo3::PyIterProtocol<'_> for OCSPResponseIterator {
-    fn __iter__(slf: pyo3::PyRef<'p, Self>) -> pyo3::PyRef<'p, Self> {
+#[pyo3::prelude::pymethods]
+impl OCSPResponseIterator {
+    fn __iter__(slf: pyo3::PyRef<'_, Self>) -> pyo3::PyRef<'_, Self> {
         slf
     }
 
-    fn __next__(mut slf: pyo3::PyRefMut<'p, Self>) -> Option<OCSPSingleResponse> {
+    fn __next__(&mut self) -> Option<OCSPSingleResponse> {
         let single_resp =
-            try_map_arc_data_mut_ocsp_response_iterator(&mut slf.contents, |_data, v| {
+            try_map_arc_data_mut_ocsp_response_iterator(&mut self.contents, |_data, v| {
                 match v.next() {
                     Some(single_resp) => Ok(single_resp),
                     None => Err(()),
@@ -842,7 +856,10 @@ impl OCSPSingleResponse {
     }
 
     #[getter]
-    fn hash_algorithm<'p>(&self, py: pyo3::Python<'p>) -> Result<&'p pyo3::PyAny, PyAsn1Error> {
+    fn hash_algorithm<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> Result<&'p pyo3::PyAny, CryptographyError> {
         self.single_response().py_hash_algorithm(py)
     }
 
@@ -857,7 +874,7 @@ impl OCSPSingleResponse {
     }
 
     #[getter]
-    fn revocation_reason<'p>(&self, py: pyo3::Python<'p>) -> PyAsn1Result<&'p pyo3::PyAny> {
+    fn revocation_reason<'p>(&self, py: pyo3::Python<'p>) -> CryptographyResult<&'p pyo3::PyAny> {
         self.single_response().py_revocation_reason(py)
     }
 

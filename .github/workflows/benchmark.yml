@@ -1,6 +1,9 @@
 name: Benchmark
 on:
-  pull_request: {}
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
 
 permissions:
   contents: read
@@ -9,17 +12,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+env:
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v3.3.0
+      - uses: actions/checkout@v3.5.0
         timeout-minutes: 3
         with:
           persist-credentials: false
           path: "cryptography-pr"
-      - uses: actions/checkout@v3.3.0
+      - uses: actions/checkout@v3.5.0
         timeout-minutes: 3
         with:
           repository: "pyca/cryptography"
