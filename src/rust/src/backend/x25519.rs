@@ -2,16 +2,17 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
+use crate::backend::utils;
 use crate::buf::CffiBuf;
-use crate::error::{CryptographyError, CryptographyResult};
+use crate::error::CryptographyResult;
 use foreign_types_shared::ForeignTypeRef;
 
-#[pyo3::prelude::pyclass]
+#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.x25519")]
 struct X25519PrivateKey {
     pkey: openssl::pkey::PKey<openssl::pkey::Private>,
 }
 
-#[pyo3::prelude::pyclass]
+#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.x25519")]
 struct X25519PublicKey {
     pkey: openssl::pkey::PKey<openssl::pkey::Public>,
 }
@@ -51,6 +52,7 @@ fn from_private_bytes(data: CffiBuf<'_>) -> pyo3::PyResult<X25519PrivateKey> {
             })?;
     Ok(X25519PrivateKey { pkey })
 }
+
 #[pyo3::prelude::pyfunction]
 fn from_public_bytes(data: &[u8]) -> pyo3::PyResult<X25519PublicKey> {
     let pkey = openssl::pkey::PKey::public_key_from_raw_bytes(data, openssl::pkey::Id::X25519)
@@ -98,109 +100,21 @@ impl X25519PrivateKey {
     }
 
     fn private_bytes<'p>(
-        &self,
+        slf: &pyo3::PyCell<Self>,
         py: pyo3::Python<'p>,
         encoding: &pyo3::PyAny,
         format: &pyo3::PyAny,
         encryption_algorithm: &pyo3::PyAny,
     ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
-        let serialization_mod = py.import("cryptography.hazmat.primitives.serialization")?;
-        let encoding_class: &pyo3::types::PyType = serialization_mod
-            .getattr(pyo3::intern!(py, "Encoding"))?
-            .extract()?;
-        let private_format_class: &pyo3::types::PyType = serialization_mod
-            .getattr(pyo3::intern!(py, "PrivateFormat"))?
-            .extract()?;
-        let no_encryption_class: &pyo3::types::PyType = serialization_mod
-            .getattr(pyo3::intern!(py, "NoEncryption"))?
-            .extract()?;
-        let best_available_encryption_class: &pyo3::types::PyType = serialization_mod
-            .getattr(pyo3::intern!(py, "BestAvailableEncryption"))?
-            .extract()?;
-
-        if !encoding.is_instance(encoding_class)? {
-            return Err(CryptographyError::from(
-                pyo3::exceptions::PyTypeError::new_err(
-                    "encoding must be an item from the Encoding enum",
-                ),
-            ));
-        }
-        if !format.is_instance(private_format_class)? {
-            return Err(CryptographyError::from(
-                pyo3::exceptions::PyTypeError::new_err(
-                    "format must be an item from the PrivateFormat enum",
-                ),
-            ));
-        }
-
-        if encoding.is(encoding_class.getattr(pyo3::intern!(py, "Raw"))?)
-            || format.is(private_format_class.getattr(pyo3::intern!(py, "Raw"))?)
-        {
-            if !encoding.is(encoding_class.getattr(pyo3::intern!(py, "Raw"))?)
-                || !format.is(private_format_class.getattr(pyo3::intern!(py, "Raw"))?)
-                || !encryption_algorithm.is_instance(no_encryption_class)?
-            {
-                return Err(CryptographyError::from(pyo3::exceptions::PyValueError::new_err(
-                    "When using Raw both encoding and format must be Raw and encryption_algorithm must be NoEncryption()"
-                )));
-            }
-            let raw_bytes = self.pkey.raw_private_key()?;
-            return Ok(pyo3::types::PyBytes::new(py, &raw_bytes));
-        }
-
-        let password = if encryption_algorithm.is_instance(no_encryption_class)? {
-            b""
-        } else if encryption_algorithm.is_instance(best_available_encryption_class)? {
-            encryption_algorithm
-                .getattr(pyo3::intern!(py, "password"))?
-                .extract::<&[u8]>()?
-        } else {
-            return Err(CryptographyError::from(
-                pyo3::exceptions::PyTypeError::new_err(
-                    "Encryption algorithm must be a KeySerializationEncryption instance",
-                ),
-            ));
-        };
-
-        if password.len() > 1023 {
-            return Err(CryptographyError::from(
-                pyo3::exceptions::PyValueError::new_err(
-                    "Passwords longer than 1023 bytes are not supported by this backend",
-                ),
-            ));
-        }
-
-        if format.is(private_format_class.getattr(pyo3::intern!(py, "PKCS8"))?) {
-            if encoding.is(encoding_class.getattr(pyo3::intern!(py, "PEM"))?) {
-                let pem_bytes = if password.is_empty() {
-                    self.pkey.private_key_to_pem_pkcs8()?
-                } else {
-                    self.pkey.private_key_to_pem_pkcs8_passphrase(
-                        openssl::symm::Cipher::aes_256_cbc(),
-                        password,
-                    )?
-                };
-                return Ok(pyo3::types::PyBytes::new(py, &pem_bytes));
-            } else if encoding.is(encoding_class.getattr(pyo3::intern!(py, "DER"))?) {
-                let der_bytes = if password.is_empty() {
-                    self.pkey.private_key_to_pkcs8()?
-                } else {
-                    self.pkey.private_key_to_pkcs8_passphrase(
-                        openssl::symm::Cipher::aes_256_cbc(),
-                        password,
-                    )?
-                };
-                return Ok(pyo3::types::PyBytes::new(py, &der_bytes));
-            } else {
-                return Err(CryptographyError::from(
-                    pyo3::exceptions::PyValueError::new_err("Unsupported encoding for PKCS8"),
-                ));
-            }
-        }
-
-        Err(CryptographyError::from(
-            pyo3::exceptions::PyValueError::new_err("format is invalid with this key"),
-        ))
+        utils::pkey_private_bytes(
+            py,
+            &*slf,
+            &slf.borrow().pkey,
+            encoding,
+            format,
+            encryption_algorithm,
+            false,
+        )
     }
 }
 
@@ -215,70 +129,24 @@ impl X25519PublicKey {
     }
 
     fn public_bytes<'p>(
-        &self,
+        slf: &pyo3::PyCell<Self>,
         py: pyo3::Python<'p>,
         encoding: &pyo3::PyAny,
         format: &pyo3::PyAny,
     ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
-        let serialization_mod = py.import("cryptography.hazmat.primitives.serialization")?;
-        let encoding_class: &pyo3::types::PyType = serialization_mod
-            .getattr(pyo3::intern!(py, "Encoding"))?
-            .extract()?;
-        let public_format_class: &pyo3::types::PyType = serialization_mod
-            .getattr(pyo3::intern!(py, "PublicFormat"))?
-            .extract()?;
+        utils::pkey_public_bytes(py, &*slf, &slf.borrow().pkey, encoding, format, false)
+    }
 
-        if !encoding.is_instance(encoding_class)? {
-            return Err(CryptographyError::from(
-                pyo3::exceptions::PyTypeError::new_err(
-                    "encoding must be an item from the Encoding enum",
-                ),
-            ));
+    fn __richcmp__(
+        &self,
+        other: pyo3::PyRef<'_, X25519PublicKey>,
+        op: pyo3::basic::CompareOp,
+    ) -> pyo3::PyResult<bool> {
+        match op {
+            pyo3::basic::CompareOp::Eq => Ok(self.pkey.public_eq(&other.pkey)),
+            pyo3::basic::CompareOp::Ne => Ok(!self.pkey.public_eq(&other.pkey)),
+            _ => Err(pyo3::exceptions::PyTypeError::new_err("Cannot be ordered")),
         }
-        if !format.is_instance(public_format_class)? {
-            return Err(CryptographyError::from(
-                pyo3::exceptions::PyTypeError::new_err(
-                    "format must be an item from the PublicFormat enum",
-                ),
-            ));
-        }
-
-        if encoding.is(encoding_class.getattr(pyo3::intern!(py, "Raw"))?)
-            || format.is(public_format_class.getattr(pyo3::intern!(py, "Raw"))?)
-        {
-            if !encoding.is(encoding_class.getattr(pyo3::intern!(py, "Raw"))?)
-                || !format.is(public_format_class.getattr(pyo3::intern!(py, "Raw"))?)
-            {
-                return Err(CryptographyError::from(
-                    pyo3::exceptions::PyValueError::new_err(
-                        "When using Raw both encoding and format must be Raw",
-                    ),
-                ));
-            }
-            let raw_bytes = self.pkey.raw_public_key()?;
-            return Ok(pyo3::types::PyBytes::new(py, &raw_bytes));
-        }
-
-        // SubjectPublicKeyInfo + PEM/DER
-        if format.is(public_format_class.getattr(pyo3::intern!(py, "SubjectPublicKeyInfo"))?) {
-            if encoding.is(encoding_class.getattr(pyo3::intern!(py, "PEM"))?) {
-                let pem_bytes = self.pkey.public_key_to_pem()?;
-                return Ok(pyo3::types::PyBytes::new(py, &pem_bytes));
-            } else if encoding.is(encoding_class.getattr(pyo3::intern!(py, "DER"))?) {
-                let der_bytes = self.pkey.public_key_to_der()?;
-                return Ok(pyo3::types::PyBytes::new(py, &der_bytes));
-            } else {
-                return Err(CryptographyError::from(
-                    pyo3::exceptions::PyValueError::new_err(
-                        "SubjectPublicKeyInfo works only with PEM or DER encoding",
-                    ),
-                ));
-            }
-        }
-
-        Err(CryptographyError::from(
-            pyo3::exceptions::PyValueError::new_err("format is invalid with this key"),
-        ))
     }
 }
 

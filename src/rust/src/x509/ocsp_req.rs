@@ -2,23 +2,26 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
-use crate::asn1::{big_byte_slice_to_py_int, py_uint_to_big_endian_bytes};
+use crate::asn1::{big_byte_slice_to_py_int, oid_to_py_oid, py_uint_to_big_endian_bytes};
 use crate::error::{CryptographyError, CryptographyResult};
 use crate::x509;
 use crate::x509::{extensions, ocsp, oid};
-use std::sync::Arc;
+use pyo3::IntoPy;
 
 #[ouroboros::self_referencing]
 struct OwnedRawOCSPRequest {
-    data: Arc<[u8]>,
+    data: pyo3::Py<pyo3::types::PyBytes>,
     #[borrows(data)]
     #[covariant]
     value: RawOCSPRequest<'this>,
 }
 
 #[pyo3::prelude::pyfunction]
-fn load_der_ocsp_request(_py: pyo3::Python<'_>, data: &[u8]) -> CryptographyResult<OCSPRequest> {
-    let raw = OwnedRawOCSPRequest::try_new(Arc::from(data), |data| asn1::parse_single(data))?;
+fn load_der_ocsp_request(
+    py: pyo3::Python<'_>,
+    data: pyo3::Py<pyo3::types::PyBytes>,
+) -> CryptographyResult<OCSPRequest> {
+    let raw = OwnedRawOCSPRequest::try_new(data, |data| asn1::parse_single(data.as_bytes(py)))?;
 
     if raw
         .borrow_value()
@@ -41,7 +44,7 @@ fn load_der_ocsp_request(_py: pyo3::Python<'_>, data: &[u8]) -> CryptographyResu
     })
 }
 
-#[pyo3::prelude::pyclass]
+#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.ocsp")]
 struct OCSPRequest {
     raw: OwnedRawOCSPRequest,
 
@@ -81,11 +84,11 @@ impl OCSPRequest {
     ) -> Result<&'p pyo3::PyAny, CryptographyError> {
         let cert_id = self.cert_id();
 
-        let hashes = py.import("cryptography.hazmat.primitives.hashes")?;
+        let hashes = py.import(pyo3::intern!(py, "cryptography.hazmat.primitives.hashes"))?;
         match ocsp::OIDS_TO_HASH.get(&cert_id.hash_algorithm.oid) {
             Some(alg_name) => Ok(hashes.getattr(*alg_name)?.call0()?),
             None => {
-                let exceptions = py.import("cryptography.exceptions")?;
+                let exceptions = py.import(pyo3::intern!(py, "cryptography.exceptions"))?;
                 Err(CryptographyError::from(pyo3::PyErr::from_value(
                     exceptions
                         .getattr(pyo3::intern!(py, "UnsupportedAlgorithm"))?
@@ -109,14 +112,14 @@ impl OCSPRequest {
 
     #[getter]
     fn extensions(&mut self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        let x509_module = py.import("cryptography.x509")?;
+        let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
         x509::parse_and_cache_extensions(
             py,
             &mut self.cached_extensions,
             &self.raw.borrow_value().tbs_request.request_extensions,
             |oid, value| {
-                match oid {
-                    &oid::NONCE_OID => {
+                match *oid {
+                    oid::NONCE_OID => {
                         // This is a disaster. RFC 2560 says that the contents of the nonce is
                         // just the raw extension value. This is nonsense, since they're always
                         // supposed to be ASN.1 TLVs. RFC 6960 correctly specifies that the
@@ -124,7 +127,23 @@ impl OCSPRequest {
                         // the nonce. So we try parsing as a TLV and fall back to just using
                         // the raw value.
                         let nonce = asn1::parse_single::<&[u8]>(value).unwrap_or(value);
-                        Ok(Some(x509_module.call_method1("OCSPNonce", (nonce,))?))
+                        Ok(Some(
+                            x509_module.call_method1(pyo3::intern!(py, "OCSPNonce"), (nonce,))?,
+                        ))
+                    }
+                    oid::ACCEPTABLE_RESPONSES_OID => {
+                        let oids = asn1::parse_single::<
+                            asn1::SequenceOf<'_, asn1::ObjectIdentifier>,
+                        >(value)?;
+                        let py_oids = pyo3::types::PyList::empty(py);
+                        for oid in oids {
+                            py_oids.append(oid_to_py_oid(py, &oid)?)?;
+                        }
+
+                        Ok(Some(x509_module.call_method1(
+                            pyo3::intern!(py, "OCSPAcceptableResponses"),
+                            (py_oids,),
+                        )?))
                     }
                     _ => Ok(None),
                 }
@@ -138,7 +157,10 @@ impl OCSPRequest {
         encoding: &pyo3::PyAny,
     ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
         let der = py
-            .import("cryptography.hazmat.primitives.serialization")?
+            .import(pyo3::intern!(
+                py,
+                "cryptography.hazmat.primitives.serialization"
+            ))?
             .getattr(pyo3::intern!(py, "Encoding"))?
             .getattr(pyo3::intern!(py, "DER"))?;
         if !encoding.is(der) {
@@ -248,8 +270,7 @@ fn create_ocsp_request(
         optional_signature: None,
     };
     let data = asn1::write_single(&ocsp_req)?;
-    // TODO: extra copy as we round-trip through a slice
-    load_der_ocsp_request(py, &data)
+    load_der_ocsp_request(py, pyo3::types::PyBytes::new(py, &data).into_py(py))
 }
 
 pub(crate) fn add_to_module(module: &pyo3::prelude::PyModule) -> pyo3::PyResult<()> {

@@ -20,7 +20,6 @@ mod x509;
 
 #[cfg(not(python_implementation = "PyPy"))]
 use pyo3::FromPyPointer;
-use std::convert::TryInto;
 
 #[cfg(python_implementation = "PyPy")]
 extern "C" {
@@ -102,7 +101,7 @@ fn raise_openssl_error() -> crate::error::CryptographyResult<()> {
     Err(openssl::error::ErrorStack::get().into())
 }
 
-#[pyo3::prelude::pyclass]
+#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl")]
 struct OpenSSLError {
     e: openssl::error::Error,
 }

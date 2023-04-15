@@ -2663,6 +2663,34 @@ X.509 Extensions
 
         Returns the DER encoded bytes payload of the extension.
 
+.. class:: MSCertificateTemplate(template_id, major_version, minor_version)
+    :canonical: cryptography.x509.extensions.MSCertificateTemplate
+
+    .. versionadded:: 41.0.0
+
+    The Microsoft certificate template extension is a proprietary Microsoft
+    PKI extension that is used to provide information about the template
+    associated with the certificate.
+
+    .. attribute:: oid
+
+        :type: :class:`ObjectIdentifier`
+
+        Returns
+        :attr:`~cryptography.x509.oid.ExtensionOID.MS_CERTIFICATE_TEMPLATE`.
+
+    .. attribute:: template_id
+
+        :type: :class:`ObjectIdentifier`
+
+    .. attribute:: major_version
+
+        :type: int or None
+
+    .. attribute:: minor_version
+
+        :type: int or None
+
 .. class:: CertificatePolicies(policies)
     :canonical: cryptography.x509.extensions.CertificatePolicies
 
@@ -2873,6 +2901,29 @@ OCSP Extensions
     .. attribute:: nonce
 
         :type: bytes
+
+.. class:: OCSPAcceptableResponses(response)
+    :canonical: cryptography.x509.extensions.OCSPAcceptableResponses
+
+    .. versionadded:: 41.0.0
+
+    OCSP acceptable responses is an extension that is only valid inside
+    :class:`~cryptography.x509.ocsp.OCSPRequest` objects. This allows an OCSP
+    client to tell the server what types of responses it supports. In practice
+    this is rarely used, because there is only one kind of OCSP response in
+    wide use.
+
+    .. attribute:: oid
+
+        :type: :class:`ObjectIdentifier`
+
+        Returns
+        :attr:`~cryptography.x509.oid.OCSPExtensionOID.ACCEPTABLE_RESPONSES`.
+
+    .. attribute:: nonce
+
+        :type: bytes
+
 
 X.509 Request Attributes
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3481,6 +3532,12 @@ instances. The following common OIDs are available as constants.
 
         Corresponds to the dotted string ``"2.5.29.9"``.
 
+    .. attribute:: MS_CERTIFICATE_TEMPLATE
+
+        .. versionadded:: 41.0.0
+
+        Corresponds to the dotted string ``"1.3.6.1.4.1.311.21.7"``.
+
 
 .. class:: CRLEntryExtensionOID
     :canonical: cryptography.hazmat._oid.CRLEntryExtensionOID
@@ -3508,6 +3565,12 @@ instances. The following common OIDs are available as constants.
     .. attribute:: NONCE
 
         Corresponds to the dotted string ``"1.3.6.1.5.5.7.48.1.2"``.
+
+    .. attribute:: ACCEPTABLE_RESPONSES
+
+        .. versionadded:: 41.0.0
+
+        Corresponds to the dotted string ``"1.3.6.1.5.5.7.48.1.4"``.
 
 
 .. class:: AttributeOID

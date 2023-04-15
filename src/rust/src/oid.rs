@@ -6,7 +6,7 @@ use crate::error::CryptographyResult;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-#[pyo3::prelude::pyclass]
+#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust")]
 pub(crate) struct ObjectIdentifier {
     pub(crate) oid: asn1::ObjectIdentifier,
 }
@@ -31,9 +31,9 @@ impl ObjectIdentifier {
         py: pyo3::Python<'p>,
     ) -> pyo3::PyResult<&'p pyo3::PyAny> {
         let oid_names = py
-            .import("cryptography.hazmat._oid")?
+            .import(pyo3::intern!(py, "cryptography.hazmat._oid"))?
             .getattr(pyo3::intern!(py, "_OID_NAMES"))?;
-        oid_names.call_method1("get", (slf, "Unknown OID"))
+        oid_names.call_method1(pyo3::intern!(py, "get"), (slf, "Unknown OID"))
     }
 
     fn __deepcopy__(slf: pyo3::PyRef<'_, Self>, _memo: pyo3::PyObject) -> pyo3::PyRef<'_, Self> {

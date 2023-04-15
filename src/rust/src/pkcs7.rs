@@ -7,7 +7,6 @@ use crate::buf::CffiBuf;
 use crate::error::CryptographyResult;
 use crate::x509;
 
-use chrono::Timelike;
 use once_cell::sync::Lazy;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -133,7 +132,10 @@ fn sign_and_serialize<'p>(
     options: &'p pyo3::types::PyList,
 ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
     let pkcs7_options = py
-        .import("cryptography.hazmat.primitives.serialization.pkcs7")?
+        .import(pyo3::intern!(
+            py,
+            "cryptography.hazmat.primitives.serialization.pkcs7"
+        ))?
         .getattr(pyo3::intern!(py, "PKCS7Options"))?;
 
     let raw_data: CffiBuf<'p> = builder.getattr(pyo3::intern!(py, "_data"))?.extract()?;
@@ -149,9 +151,8 @@ fn sign_and_serialize<'p>(
         };
 
     let content_type_bytes = asn1::write_single(&PKCS7_DATA_OID)?;
-    let signing_time_bytes = asn1::write_single(&x509::certificate::time_from_chrono(
-        chrono::Utc::now().with_nanosecond(0).unwrap(),
-    )?)?;
+    let now = x509::common::datetime_now(py)?;
+    let signing_time_bytes = asn1::write_single(&x509::certificate::time_from_datetime(now)?)?;
     let smime_cap_bytes = asn1::write_single(&asn1::SequenceOfWriter::new([
         // Subset of values OpenSSL provides:
         // https://github.com/openssl/openssl/blob/667a8501f0b6e5705fd611d5bb3ca24848b07154/crypto/pkcs7/pk7_smime.c#L150
@@ -295,7 +296,10 @@ fn sign_and_serialize<'p>(
     let ci_bytes = asn1::write_single(&content_info)?;
 
     let encoding_class = py
-        .import("cryptography.hazmat.primitives.serialization")?
+        .import(pyo3::intern!(
+            py,
+            "cryptography.hazmat.primitives.serialization"
+        ))?
         .getattr(pyo3::intern!(py, "Encoding"))?;
 
     if encoding.is(encoding_class.getattr(pyo3::intern!(py, "SMIME"))?) {
@@ -305,7 +309,10 @@ fn sign_and_serialize<'p>(
             .collect::<Vec<_>>()
             .join(",");
         let smime_encode = py
-            .import("cryptography.hazmat.primitives.serialization.pkcs7")?
+            .import(pyo3::intern!(
+                py,
+                "cryptography.hazmat.primitives.serialization.pkcs7"
+            ))?
             .getattr(pyo3::intern!(py, "_smime_encode"))?;
         Ok(smime_encode
             .call1((&*data_without_header, &*ci_bytes, mic_algs, text_mode))?
