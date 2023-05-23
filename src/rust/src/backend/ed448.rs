@@ -5,6 +5,7 @@
 use crate::backend::utils;
 use crate::buf::CffiBuf;
 use crate::error::{CryptographyError, CryptographyResult};
+use crate::exceptions;
 use foreign_types_shared::ForeignTypeRef;
 
 #[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.ed448")]
@@ -103,7 +104,7 @@ impl Ed448PrivateKey {
     ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
         utils::pkey_private_bytes(
             py,
-            &*slf,
+            slf,
             &slf.borrow().pkey,
             encoding,
             format,
@@ -115,20 +116,14 @@ impl Ed448PrivateKey {
 
 #[pyo3::prelude::pymethods]
 impl Ed448PublicKey {
-    fn verify(
-        &self,
-        py: pyo3::Python<'_>,
-        signature: &[u8],
-        data: &[u8],
-    ) -> CryptographyResult<()> {
+    fn verify(&self, signature: &[u8], data: &[u8]) -> CryptographyResult<()> {
         let valid = openssl::sign::Verifier::new_without_digest(&self.pkey)?
             .verify_oneshot(signature, data)?;
 
         if !valid {
-            return Err(CryptographyError::from(pyo3::PyErr::from_value(
-                py.import(pyo3::intern!(py, "cryptography.exceptions"))?
-                    .call_method1(pyo3::intern!(py, "InvalidSignature"), ())?,
-            )));
+            return Err(CryptographyError::from(
+                exceptions::InvalidSignature::new_err(()),
+            ));
         }
 
         Ok(())
@@ -148,7 +143,7 @@ impl Ed448PublicKey {
         encoding: &pyo3::PyAny,
         format: &pyo3::PyAny,
     ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
-        utils::pkey_public_bytes(py, &*slf, &slf.borrow().pkey, encoding, format, true)
+        utils::pkey_public_bytes(py, slf, &slf.borrow().pkey, encoding, format, true)
     }
 
     fn __richcmp__(
@@ -166,11 +161,11 @@ impl Ed448PublicKey {
 
 pub(crate) fn create_module(py: pyo3::Python<'_>) -> pyo3::PyResult<&pyo3::prelude::PyModule> {
     let m = pyo3::prelude::PyModule::new(py, "ed448")?;
-    m.add_wrapped(pyo3::wrap_pyfunction!(generate_key))?;
-    m.add_wrapped(pyo3::wrap_pyfunction!(private_key_from_ptr))?;
-    m.add_wrapped(pyo3::wrap_pyfunction!(public_key_from_ptr))?;
-    m.add_wrapped(pyo3::wrap_pyfunction!(from_private_bytes))?;
-    m.add_wrapped(pyo3::wrap_pyfunction!(from_public_bytes))?;
+    m.add_function(pyo3::wrap_pyfunction!(generate_key, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(private_key_from_ptr, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(public_key_from_ptr, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(from_private_bytes, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(from_public_bytes, m)?)?;
 
     m.add_class::<Ed448PrivateKey>()?;
     m.add_class::<Ed448PublicKey>()?;

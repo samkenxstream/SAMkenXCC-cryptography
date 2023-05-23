@@ -729,15 +729,15 @@ class TestRevokedCertificate:
         assert crl[2].serial_number == 3
 
 
+@pytest.mark.supported(
+    only_if=lambda backend: (
+        not backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
+        and not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
+        and not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+    ),
+    skip_message="Does not support RSA PSS loading",
+)
 class TestRSAPSSCertificate:
-    @pytest.mark.supported(
-        only_if=lambda backend: (
-            not backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
-            and not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
-            and not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
-        ),
-        skip_message="Does not support RSA PSS loading",
-    )
     def test_load_cert_pub_key(self, backend):
         cert = _load_cert(
             os.path.join("x509", "custom", "rsa_pss_cert.pem"),
@@ -751,7 +751,62 @@ class TestRSAPSSCertificate:
         assert isinstance(expected_pub_key, rsa.RSAPublicKey)
         pub_key = cert.public_key()
         assert isinstance(pub_key, rsa.RSAPublicKey)
-        assert pub_key.public_numbers() == expected_pub_key.public_numbers()
+        assert pub_key == expected_pub_key
+        pss = cert.signature_algorithm_parameters
+        assert isinstance(pss, padding.PSS)
+        assert isinstance(pss._mgf, padding.MGF1)
+        assert isinstance(pss._mgf._algorithm, hashes.SHA256)
+        assert pss._salt_length == 222
+        assert isinstance(cert.signature_hash_algorithm, hashes.SHA256)
+        pub_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            pss,
+            cert.signature_hash_algorithm,
+        )
+
+    def test_load_pss_sha1_mgf1_sha1(self, backend):
+        cert = _load_cert(
+            os.path.join("x509", "ee-pss-sha1-cert.pem"),
+            x509.load_pem_x509_certificate,
+        )
+        assert isinstance(cert, x509.Certificate)
+        pub_key = cert.public_key()
+        assert isinstance(pub_key, rsa.RSAPublicKey)
+        pss = cert.signature_algorithm_parameters
+        assert isinstance(pss, padding.PSS)
+        assert isinstance(pss._mgf, padding.MGF1)
+        assert isinstance(pss._mgf._algorithm, hashes.SHA1)
+        assert pss._salt_length == 20
+        assert isinstance(cert.signature_hash_algorithm, hashes.SHA1)
+
+    def test_invalid_mgf(self, backend):
+        cert = _load_cert(
+            os.path.join("x509", "custom", "rsa_pss_cert_invalid_mgf.der"),
+            x509.load_der_x509_certificate,
+        )
+        with pytest.raises(ValueError):
+            cert.signature_algorithm_parameters
+
+    def test_unsupported_mgf_hash(self, backend):
+        cert = _load_cert(
+            os.path.join(
+                "x509", "custom", "rsa_pss_cert_unsupported_mgf_hash.der"
+            ),
+            x509.load_der_x509_certificate,
+        )
+        with pytest.raises(UnsupportedAlgorithm):
+            cert.signature_algorithm_parameters
+
+    def test_no_sig_params(self, backend):
+        cert = _load_cert(
+            os.path.join("x509", "custom", "rsa_pss_cert_no_sig_params.der"),
+            x509.load_der_x509_certificate,
+        )
+        with pytest.raises(ValueError):
+            cert.signature_algorithm_parameters
+        with pytest.raises(ValueError):
+            cert.signature_hash_algorithm
 
 
 class TestRSACertificate:
@@ -767,6 +822,28 @@ class TestRSACertificate:
         assert isinstance(cert.signature_hash_algorithm, hashes.SHA1)
         assert (
             cert.signature_algorithm_oid == SignatureAlgorithmOID.RSA_WITH_SHA1
+        )
+        assert isinstance(
+            cert.signature_algorithm_parameters, padding.PKCS1v15
+        )
+
+    def test_check_pkcs1_signature_algorithm_parameters(self, backend):
+        cert = _load_cert(
+            os.path.join("x509", "custom", "ca", "rsa_ca.pem"),
+            x509.load_pem_x509_certificate,
+        )
+        assert isinstance(cert, x509.Certificate)
+        assert isinstance(
+            cert.signature_algorithm_parameters, padding.PKCS1v15
+        )
+        pk = cert.public_key()
+        assert isinstance(pk, rsa.RSAPublicKey)
+        assert cert.signature_hash_algorithm is not None
+        pk.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            cert.signature_algorithm_parameters,
+            cert.signature_hash_algorithm,
         )
 
     def test_load_legacy_pem_header(self, backend):
@@ -937,6 +1014,20 @@ class TestRSACertificate:
             padding.PKCS1v15(),
             cert.signature_hash_algorithm,
         )
+
+    def test_tbs_precertificate_bytes_duplicate_extensions_raises(
+        self, backend
+    ):
+        cert = _load_cert(
+            os.path.join("x509", "custom", "two_basic_constraints.pem"),
+            x509.load_pem_x509_certificate,
+        )
+
+        with pytest.raises(
+            x509.DuplicateExtension,
+            match="Duplicate 2.5.29.19 extension found",
+        ):
+            cert.tbs_precertificate_bytes
 
     def test_tbs_precertificate_bytes_no_extensions_raises(self, backend):
         cert = _load_cert(
@@ -1250,6 +1341,25 @@ class TestRSACertificate:
 
         assert exc.value.parsed_version == 7
 
+    def test_invalid_visiblestring_in_explicit_text(self, backend):
+        cert = _load_cert(
+            os.path.join(
+                "x509",
+                "belgian-eid-invalid-visiblestring.pem",
+            ),
+            x509.load_pem_x509_certificate,
+        )
+        with pytest.warns(utils.DeprecatedIn41):
+            cp = cert.extensions.get_extension_for_class(
+                x509.CertificatePolicies
+            ).value
+        assert isinstance(cp, x509.CertificatePolicies)
+        assert cp[0].policy_qualifiers[1].explicit_text == (
+            "Gebruik onderworpen aan aansprakelijkheidsbeperkingen, zie CPS "
+            "- Usage soumis à des limitations de responsabilité, voir CPS - "
+            "Verwendung unterliegt Haftungsbeschränkungen, gemäss CPS"
+        )
+
     def test_eq(self, backend):
         cert = _load_cert(
             os.path.join("x509", "custom", "post2000utctime.pem"),
@@ -1447,6 +1557,50 @@ class TestRSACertificate:
         assert ext.value == x509.TLSFeature(
             [x509.TLSFeatureType.status_request]
         )
+
+    def test_verify_directly_issued_by_rsa_pss(
+        self, rsa_key_2048: rsa.RSAPrivateKey
+    ):
+        subject_private_key = RSA_KEY_2048_ALT.private_key(
+            unsafe_skip_rsa_key_validation=True
+        )
+
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "PyCA CA")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "PyCA CA")])
+            )
+            .public_key(rsa_key_2048.public_key())
+            .serial_number(1)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2030, 1, 1))
+        )
+        ca = builder.sign(rsa_key_2048, hashes.SHA256())
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "leaf")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "PyCA CA")])
+            )
+            .public_key(subject_private_key.public_key())
+            .serial_number(100)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2025, 1, 1))
+        )
+        cert = builder.sign(
+            rsa_key_2048,
+            hashes.SHA256(),
+            rsa_padding=padding.PSS(
+                padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.DIGEST_LENGTH,
+            ),
+        )
+        cert.verify_directly_issued_by(ca)
 
     def test_verify_directly_issued_by_rsa(
         self, rsa_key_2048: rsa.RSAPrivateKey
@@ -2308,6 +2462,195 @@ class TestCertificateBuilder:
         assert parsed.not_before_tag == 0x17
         # GENERALIZED TIME
         assert parsed.not_after_tag == 0x18
+
+    def test_rdns_preserve_iteration_order(
+        self, rsa_key_2048: rsa.RSAPrivateKey, backend
+    ):
+        """
+        This test checks that RDN ordering is consistent when loading
+        data from a certificate. Since the underlying RDN is an ASN.1
+        set these values get lexicographically ordered on encode and
+        the parsed value won't necessarily be in the same order as
+        the originally provided list. However, we want to make sure
+        that the order is always consistent since it confuses people
+        when it isn't.
+        """
+        name = x509.Name(
+            [
+                x509.RelativeDistinguishedName(
+                    [
+                        x509.NameAttribute(NameOID.TITLE, "Test"),
+                        x509.NameAttribute(NameOID.COMMON_NAME, "Multivalue"),
+                        x509.NameAttribute(NameOID.SURNAME, "RDNs"),
+                    ]
+                ),
+            ]
+        )
+
+        cert = (
+            x509.CertificateBuilder()
+            .serial_number(1)
+            .issuer_name(name)
+            .subject_name(name)
+            .public_key(rsa_key_2048.public_key())
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2038, 1, 1))
+            .sign(rsa_key_2048, hashes.SHA256(), backend)
+        )
+        loaded_cert = x509.load_pem_x509_certificate(
+            cert.public_bytes(encoding=serialization.Encoding.PEM)
+        )
+        assert next(iter(loaded_cert.subject.rdns[0])) == x509.NameAttribute(
+            NameOID.SURNAME, "RDNs"
+        )
+
+    @pytest.mark.parametrize(
+        ("alg", "mgf_alg"),
+        [
+            (hashes.SHA512(), hashes.SHA256()),
+            (hashes.SHA3_512(), hashes.SHA3_256()),
+        ],
+    )
+    def test_sign_pss(
+        self, rsa_key_2048: rsa.RSAPrivateKey, alg, mgf_alg, backend
+    ):
+        if not backend.signature_hash_supported(alg):
+            pytest.skip(f"{alg} signature not supported")
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .public_key(rsa_key_2048.public_key())
+            .serial_number(777)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2038, 1, 1))
+        )
+        pss = padding.PSS(
+            mgf=padding.MGF1(mgf_alg), salt_length=alg.digest_size
+        )
+        cert = builder.sign(rsa_key_2048, alg, rsa_padding=pss)
+        pk = cert.public_key()
+        assert isinstance(pk, rsa.RSAPublicKey)
+        assert isinstance(cert.signature_hash_algorithm, type(alg))
+        cert_params = cert.signature_algorithm_parameters
+        assert isinstance(cert_params, padding.PSS)
+        assert cert_params._salt_length == pss._salt_length
+        assert isinstance(cert_params._mgf, padding.MGF1)
+        assert isinstance(cert_params._mgf._algorithm, type(mgf_alg))
+        pk.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            cert_params,
+            alg,
+        )
+
+    @pytest.mark.parametrize(
+        ("padding_len", "computed_len"),
+        [
+            (padding.PSS.MAX_LENGTH, 222),
+            (padding.PSS.DIGEST_LENGTH, 32),
+        ],
+    )
+    def test_sign_pss_length_options(
+        self,
+        rsa_key_2048: rsa.RSAPrivateKey,
+        padding_len,
+        computed_len,
+        backend,
+    ):
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .public_key(rsa_key_2048.public_key())
+            .serial_number(777)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2038, 1, 1))
+        )
+        pss = padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding_len
+        )
+        cert = builder.sign(rsa_key_2048, hashes.SHA256(), rsa_padding=pss)
+        assert isinstance(cert.signature_algorithm_parameters, padding.PSS)
+        assert cert.signature_algorithm_parameters._salt_length == computed_len
+
+    def test_sign_pss_auto_unsupported(
+        self, rsa_key_2048: rsa.RSAPrivateKey, backend
+    ):
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .public_key(rsa_key_2048.public_key())
+            .serial_number(777)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2038, 1, 1))
+        )
+        pss = padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.AUTO
+        )
+        with pytest.raises(TypeError):
+            builder.sign(rsa_key_2048, hashes.SHA256(), rsa_padding=pss)
+
+    def test_sign_invalid_padding(
+        self, rsa_key_2048: rsa.RSAPrivateKey, backend
+    ):
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .public_key(rsa_key_2048.public_key())
+            .serial_number(777)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2038, 1, 1))
+        )
+        with pytest.raises(TypeError):
+            builder.sign(
+                rsa_key_2048,
+                hashes.SHA256(),
+                rsa_padding=b"notapadding",  # type: ignore[arg-type]
+            )
+        eckey = ec.generate_private_key(ec.SECP256R1())
+        with pytest.raises(TypeError):
+            builder.sign(
+                eckey, hashes.SHA256(), rsa_padding=padding.PKCS1v15()
+            )
+
+    def test_sign_pss_hash_none(
+        self, rsa_key_2048: rsa.RSAPrivateKey, backend
+    ):
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .issuer_name(
+                x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "US")])
+            )
+            .public_key(rsa_key_2048.public_key())
+            .serial_number(777)
+            .not_valid_before(datetime.datetime(2020, 1, 1))
+            .not_valid_after(datetime.datetime(2038, 1, 1))
+        )
+        pss = padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32)
+        with pytest.raises(TypeError):
+            builder.sign(rsa_key_2048, None, rsa_padding=pss)
 
     def test_no_subject_name(self, rsa_key_2048: rsa.RSAPrivateKey, backend):
         subject_private_key = rsa_key_2048
@@ -4580,6 +4923,7 @@ class TestDSACertificate:
         assert isinstance(cert.signature_hash_algorithm, hashes.SHA1)
         public_key = cert.public_key()
         assert isinstance(public_key, dsa.DSAPublicKey)
+        assert cert.signature_algorithm_parameters is None
         num = public_key.public_numbers()
         assert num.y == int(
             "4c08bfe5f2d76649c80acf7d431f6ae2124b217abc8c9f6aca776ddfa94"
@@ -4828,6 +5172,15 @@ class TestECDSACertificate:
             16,
         )
         assert isinstance(num.curve, ec.SECP384R1)
+        assert isinstance(cert.signature_algorithm_parameters, ec.ECDSA)
+        assert isinstance(
+            cert.signature_algorithm_parameters.algorithm, hashes.SHA384
+        )
+        public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            cert.signature_algorithm_parameters,
+        )
 
     def test_load_bitstring_dn(self, backend):
         cert = _load_cert(
@@ -5571,6 +5924,7 @@ class TestEd25519Certificate:
         assert cert.serial_number == 9579446940964433301
         assert cert.signature_hash_algorithm is None
         assert cert.signature_algorithm_oid == SignatureAlgorithmOID.ED25519
+        assert cert.signature_algorithm_parameters is None
 
     def test_deepcopy(self, backend):
         cert = _load_cert(
@@ -5616,6 +5970,7 @@ class TestEd448Certificate:
         assert cert.serial_number == 448
         assert cert.signature_hash_algorithm is None
         assert cert.signature_algorithm_oid == SignatureAlgorithmOID.ED448
+        assert cert.signature_algorithm_parameters is None
 
     def test_verify_directly_issued_by_ed448(self, backend):
         issuer_private_key = ed448.Ed448PrivateKey.generate()

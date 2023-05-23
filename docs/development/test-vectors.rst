@@ -287,6 +287,10 @@ X.509
   a subject DN with a bit string type.
 * ``cryptography-scts-tbs-precert.der`` - The "to-be-signed" pre-certificate
   bytes from ``cryptography-scts.pem``, with the SCT list extension removed.
+* ``belgian-eid-invalid-visiblestring.pem`` - A certificate with UTF-8
+  bytes in a ``VisibleString`` type.
+* ``ee-pss-sha1-cert.pem`` - An RSA PSS certificate using a SHA1 signature and
+  SHA1 for MGF1 from the OpenSSL test suite.
 
 Custom X.509 Vectors
 ~~~~~~~~~~~~~~~~~~~~
@@ -478,6 +482,13 @@ Custom X.509 Vectors
   are longer than 2 characters.
 * ``rsa_pss_cert.pem`` - A self-signed certificate with an RSA PSS signature
   with ``asymmetric/PKCS8/rsa_pss_2048.pem`` as its key.
+* ``rsa_pss_cert_invalid_mgf.der`` - A self-signed certificate with an invalid
+  RSA PSS signature that has a non-MGF1 OID for its mask generation function in the
+  signature algorithm.
+* ``rsa_pss_cert_no_sig_params.der`` - A self-signed certificate with an invalid
+  RSA PSS signature algorithm that is missing signature parameters for PSS.
+* ``rsa_pss_cert_unsupported_mgf_hash.der`` - A self-signed certificate with an
+  unsupported MGF1 hash algorithm in the signature algorithm.
 * ``long-form-name-attribute.pem`` - A certificate with ``subject`` and ``issuer``
   names containing attributes whose value's tag is encoded in long-form.
 * ``mismatch_inner_outer_sig_algorithm.der`` - A leaf certificate derived from
@@ -1005,13 +1016,13 @@ header format (substituting the correct information):
 .. _`Specification repository`: https://github.com/fernet/spec
 .. _`errata`: https://www.rfc-editor.org/errata_search.php?rfc=6238
 .. _`OpenSSL example key`: https://github.com/openssl/openssl/blob/d02b48c63a58ea4367a0e905979f140b7d090f86/test/testrsa.pem
-.. _`GnuTLS key parsing tests`: https://gitlab.com/gnutls/gnutls/commit/f16ef39ef0303b02d7fa590a37820440c466ce8d
+.. _`GnuTLS key parsing tests`: https://gitlab.com/gnutls/gnutls/-/commit/f16ef39ef0303b02d7fa590a37820440c466ce8d
 .. _`enc-rsa-pkcs8.pem`: https://gitlab.com/gnutls/gnutls/blob/f8d943b38bf74eaaa11d396112daf43cb8aa82ae/tests/pkcs8-decode/encpkcs8.pem
 .. _`enc2-rsa-pkcs8.pem`: https://gitlab.com/gnutls/gnutls/blob/f8d943b38bf74eaaa11d396112daf43cb8aa82ae/tests/pkcs8-decode/enc2pkcs8.pem
 .. _`unenc-rsa-pkcs8.pem`: https://gitlab.com/gnutls/gnutls/blob/f8d943b38bf74eaaa11d396112daf43cb8aa82ae/tests/pkcs8-decode/unencpkcs8.pem
 .. _`pkcs12_s2k_pem.c`: https://gitlab.com/gnutls/gnutls/blob/f8d943b38bf74eaaa11d396112daf43cb8aa82ae/tests/pkcs12_s2k_pem.c
 .. _`Botan's ECC private keys`: https://github.com/randombit/botan/tree/4917f26a2b154e841cd27c1bcecdd41d2bdeb6ce/src/tests/data/ecc
-.. _`GnuTLS example keys`: https://gitlab.com/gnutls/gnutls/commit/ad2061deafdd7db78fd405f9d143b0a7c579da7b
+.. _`GnuTLS example keys`: https://gitlab.com/gnutls/gnutls/-/commit/ad2061deafdd7db78fd405f9d143b0a7c579da7b
 .. _`NESSIE IDEA vectors`: https://www.cosic.esat.kuleuven.be/nessie/testvectors/bc/idea/Idea-128-64.verified.test-vectors
 .. _`NESSIE`: https://en.wikipedia.org/wiki/NESSIE
 .. _`Ed25519 website`: https://ed25519.cr.yp.to/software.html

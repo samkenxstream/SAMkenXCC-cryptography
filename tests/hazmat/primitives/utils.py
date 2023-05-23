@@ -209,7 +209,6 @@ def base_hash_test(backend, algorithm, digest_size):
     assert m.algorithm.digest_size == digest_size
     m_copy = m.copy()
     assert m != m_copy
-    assert m._ctx != m_copy._ctx
 
     m.update(b"abc")
     copy = m.copy()
@@ -230,7 +229,6 @@ def base_hmac_test(backend, algorithm):
     h = hmac.HMAC(binascii.unhexlify(key), algorithm, backend=backend)
     h_copy = h.copy()
     assert h != h_copy
-    assert h._ctx != h_copy._ctx
 
 
 def generate_hmac_test(param_loader, path, file_names, algorithm):

@@ -40,8 +40,7 @@ Bumping the version number
 The next step in doing a release is bumping the version number in the
 software.
 
-* Update the version number in ``src/cryptography/__about__.py``.
-* Update the version number in ``vectors/cryptography_vectors/__about__.py``.
+* Run ``python release.py bump-version {new_version}``
 * Set the release date in the :doc:`/changelog`.
 * Do a commit indicating this.
 * Send a pull request with this.
@@ -54,7 +53,7 @@ The commit that merged the version number bump is now the official release
 commit for this release. You will need to have ``gpg`` installed and a ``gpg``
 key in order to do a release. Once this has happened:
 
-* Run ``python release.py {version}``.
+* Run ``python release.py release {version}``.
 
 The release should now be available on PyPI and a tag should be available in
 the repository.
@@ -87,9 +86,8 @@ Post-release tasks
 * Close the `milestone`_ for the previous release on GitHub.
 * For major version releases, send a pull request to pyOpenSSL increasing the
   maximum ``cryptography`` version pin and perform a pyOpenSSL release.
-* Update the version number to the next major (e.g. ``0.5.dev1``) in
-  ``src/cryptography/__about__.py`` and
-  ``vectors/cryptography_vectors/__about__.py``.
+* Update the version number to the next major (e.g. ``0.5.dev1``) with
+  ``python release.py bump-version {new_version}``.
 * Add new :doc:`/changelog` entry with next version and note that it is under
   active development
 * Send a pull request with these items

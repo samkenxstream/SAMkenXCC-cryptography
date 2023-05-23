@@ -3,32 +3,16 @@
 // for complete details.
 
 #![deny(rust_2018_idioms)]
-// Temporarily allow `clippy::borrow_deref_ref` until we can upgrade to the
-// latest pyo3: https://github.com/PyO3/pyo3/pull/2503
-//
-// `unknown_lints` is required until GHA upgrades their rustc.
-#![allow(unknown_lints, clippy::borrow_deref_ref)]
 
 mod asn1;
 mod backend;
 mod buf;
 mod error;
+mod exceptions;
 pub(crate) mod oid;
 mod pkcs7;
 mod pool;
 mod x509;
-
-#[cfg(not(python_implementation = "PyPy"))]
-use pyo3::FromPyPointer;
-
-#[cfg(python_implementation = "PyPy")]
-extern "C" {
-    fn Cryptography_make_openssl_module() -> std::os::raw::c_int;
-}
-#[cfg(not(python_implementation = "PyPy"))]
-extern "C" {
-    fn PyInit__openssl() -> *mut pyo3::ffi::PyObject;
-}
 
 /// Returns the value of the input with the most-significant-bit copied to all
 /// of the bits.
@@ -147,6 +131,11 @@ fn capture_error_stack(py: pyo3::Python<'_>) -> pyo3::PyResult<&pyo3::types::PyL
     Ok(errs)
 }
 
+#[pyo3::prelude::pyfunction]
+fn is_fips_enabled() -> bool {
+    cryptography_openssl::fips::is_enabled()
+}
+
 #[pyo3::prelude::pymodule]
 fn _rust(py: pyo3::Python<'_>, m: &pyo3::types::PyModule) -> pyo3::PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(check_pkcs7_padding, m)?)?;
@@ -156,6 +145,7 @@ fn _rust(py: pyo3::Python<'_>, m: &pyo3::types::PyModule) -> pyo3::PyResult<()> 
 
     m.add_submodule(asn1::create_submodule(py)?)?;
     m.add_submodule(pkcs7::create_submodule(py)?)?;
+    m.add_submodule(exceptions::create_submodule(py)?)?;
 
     let x509_mod = pyo3::prelude::PyModule::new(py, "x509")?;
     crate::x509::certificate::add_to_module(x509_mod)?;
@@ -170,23 +160,13 @@ fn _rust(py: pyo3::Python<'_>, m: &pyo3::types::PyModule) -> pyo3::PyResult<()> 
     crate::x509::ocsp_resp::add_to_module(ocsp_mod)?;
     m.add_submodule(ocsp_mod)?;
 
-    #[cfg(python_implementation = "PyPy")]
-    let openssl_mod = unsafe {
-        let res = Cryptography_make_openssl_module();
-        assert_eq!(res, 0);
-        pyo3::types::PyModule::import(py, "_openssl")?
-    };
-    #[cfg(not(python_implementation = "PyPy"))]
-    let openssl_mod = unsafe {
-        let ptr = PyInit__openssl();
-        pyo3::types::PyModule::from_owned_ptr(py, ptr)
-    };
-    m.add_submodule(openssl_mod)?;
+    m.add_submodule(cryptography_cffi::create_module(py)?)?;
 
     let openssl_mod = pyo3::prelude::PyModule::new(py, "openssl")?;
     openssl_mod.add_function(pyo3::wrap_pyfunction!(openssl_version, m)?)?;
     openssl_mod.add_function(pyo3::wrap_pyfunction!(raise_openssl_error, m)?)?;
     openssl_mod.add_function(pyo3::wrap_pyfunction!(capture_error_stack, m)?)?;
+    openssl_mod.add_function(pyo3::wrap_pyfunction!(is_fips_enabled, m)?)?;
     openssl_mod.add_class::<OpenSSLError>()?;
     crate::backend::add_to_module(openssl_mod)?;
     m.add_submodule(openssl_mod)?;

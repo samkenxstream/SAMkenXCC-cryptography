@@ -1,17 +1,14 @@
 # This is named ambigiously, but it's a pip constraints file, named like a
 # requirements file so dependabot will update the pins.
 # It was originally generated with;
-#    pip-compile --extra=docs --extra=docstest --extra=pep8test --extra=test --extra=test-randomorder --extra=nox --resolver=backtracking --strip-extras --unsafe-package=cffi --unsafe-package=pycparser --unsafe-package=setuptools pyproject.toml
+#    pip-compile --extra=docs --extra=docstest --extra=pep8test --extra=test --extra=test-randomorder --extra=nox --extra=sdist --resolver=backtracking --strip-extras --unsafe-package=cffi --unsafe-package=pycparser --unsafe-package=setuptools pyproject.toml
 # and then manually massaged to add version specifiers to packages whose
 # versions vary by Python version
 
 alabaster==0.7.13
     # via sphinx
-argcomplete==2.1.2
+argcomplete==3.0.8
     # via nox
-attrs==22.2.0
-    # via
-    #   pytest
 babel==2.12.1
     # via sphinx
 black==23.3.0
@@ -19,18 +16,20 @@ black==23.3.0
 bleach==6.0.0
     # via readme-renderer
 build==0.10.0
-    # via check-manifest
-certifi==2022.12.7
+    # via
+    #   check-sdist
+    #   cryptography (pyproject.toml)
+certifi==2023.5.7
     # via requests
 charset-normalizer==3.1.0
     # via requests
-check-manifest==0.49
+check-sdist==0.1.2
     # via cryptography (pyproject.toml)
 click==8.1.3
     # via black
 colorlog==6.7.0
     # via nox
-coverage==7.2.3
+coverage==7.2.5
     # via pytest-cov
 distlib==0.3.6
     # via virtualenv
@@ -43,12 +42,16 @@ exceptiongroup==1.1.1
     # via pytest
 execnet==1.9.0
     # via pytest-xdist
-filelock==3.11.0
+filelock==3.12.0
     # via virtualenv
 idna==3.4
     # via requests
 imagesize==1.4.1
     # via sphinx
+importlib-metadata==6.6.0
+    # via
+    #   keyring
+    #   twine
 iniconfig==2.0.0
     # via pytest
 jaraco-classes==3.2.3
@@ -65,13 +68,13 @@ mdurl==0.1.2
     # via markdown-it-py
 more-itertools==9.1.0
     # via jaraco-classes
-mypy==1.2.0
+mypy==1.3.0
     # via cryptography (pyproject.toml)
 mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-nox==2022.11.21
+nox==2023.4.22
     # via cryptography (pyproject.toml)
 packaging==23.1
     # via
@@ -81,10 +84,12 @@ packaging==23.1
     #   pytest
     #   sphinx
 pathspec==0.11.1
-    # via black
+    # via
+    #   black
+    #   check-sdist
 pkginfo==1.9.6
     # via twine
-platformdirs==3.2.0
+platformdirs==3.5.1
     # via
     #   black
     #   virtualenv
@@ -98,14 +103,14 @@ pyenchant==3.2.2
     # via
     #   cryptography (pyproject.toml)
     #   sphinxcontrib-spelling
-pygments==2.15.0
+pygments==2.15.1
     # via
     #   readme-renderer
     #   rich
     #   sphinx
 pyproject-hooks==1.0.0
     # via build
-pytest==7.3.0
+pytest==7.3.1
     # via
     #   cryptography (pyproject.toml)
     #   pytest-benchmark
@@ -118,28 +123,28 @@ pytest-cov==4.0.0
     # via cryptography (pyproject.toml)
 pytest-randomly==3.12.0
     # via cryptography (pyproject.toml)
-pytest-xdist==3.2.1
+pytest-xdist==3.3.1
     # via cryptography (pyproject.toml)
 readme-renderer==37.3
     # via twine
-requests==2.28.2
+requests==2.31.0
     # via
     #   requests-toolbelt
     #   sphinx
     #   twine
-requests-toolbelt==0.10.1
+requests-toolbelt==1.0.0
     # via twine
 rfc3986==2.0.0
     # via twine
-rich==13.3.4
+rich==13.3.5
     # via twine
-ruff==0.0.261
+ruff==0.0.269
     # via cryptography (pyproject.toml)
 six==1.16.0
     # via bleach
 snowballstemmer==2.2.0
     # via sphinx
-sphinx==6.1.3
+sphinx==6.2.1
     # via
     #   cryptography (pyproject.toml)
     #   sphinx-rtd-theme
@@ -176,11 +181,11 @@ twine==4.0.2
     # via cryptography (pyproject.toml)
 typing-extensions==4.5.0
     # via mypy
-urllib3==1.26.15
+urllib3==2.0.2
     # via
     #   requests
     #   twine
-virtualenv==20.21.0
+virtualenv==20.23.0
     # via nox
 webencodings==0.5.1
     # via bleach
@@ -190,4 +195,3 @@ zipp==3.15.0
 # The following packages are considered to be unsafe in a requirements file:
 # cffi
 # pycparser
-# setuptools

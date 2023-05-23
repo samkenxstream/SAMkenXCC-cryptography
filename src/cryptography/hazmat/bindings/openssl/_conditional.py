@@ -30,17 +30,9 @@ def cryptography_has_tls_st() -> typing.List[str]:
     ]
 
 
-def cryptography_has_scrypt() -> typing.List[str]:
-    return [
-        "EVP_PBE_scrypt",
-    ]
-
-
 def cryptography_has_evp_pkey_dhx() -> typing.List[str]:
     return [
         "EVP_PKEY_DHX",
-        "d2i_DHxparams_bio",
-        "i2d_DHxparams_bio",
     ]
 
 
@@ -121,12 +113,6 @@ def cryptography_has_custom_ext() -> typing.List[str]:
         "SSL_CTX_add_client_custom_ext",
         "SSL_CTX_add_server_custom_ext",
         "SSL_extension_supported",
-    ]
-
-
-def cryptography_has_openssl_cleanup() -> typing.List[str]:
-    return [
-        "OPENSSL_cleanup",
     ]
 
 
@@ -285,7 +271,6 @@ CONDITIONAL_NAMES = {
     "Cryptography_HAS_SET_CERT_CB": cryptography_has_set_cert_cb,
     "Cryptography_HAS_SSL_ST": cryptography_has_ssl_st,
     "Cryptography_HAS_TLS_ST": cryptography_has_tls_st,
-    "Cryptography_HAS_SCRYPT": cryptography_has_scrypt,
     "Cryptography_HAS_EVP_PKEY_DHX": cryptography_has_evp_pkey_dhx,
     "Cryptography_HAS_MEM_FUNCTIONS": cryptography_has_mem_functions,
     "Cryptography_HAS_X509_STORE_CTX_GET_ISSUER": (
@@ -299,7 +284,6 @@ CONDITIONAL_NAMES = {
     "Cryptography_HAS_PSK": cryptography_has_psk,
     "Cryptography_HAS_PSK_TLSv1_3": cryptography_has_psk_tlsv13,
     "Cryptography_HAS_CUSTOM_EXT": cryptography_has_custom_ext,
-    "Cryptography_HAS_OPENSSL_CLEANUP": cryptography_has_openssl_cleanup,
     "Cryptography_HAS_TLSv1_3_FUNCTIONS": cryptography_has_tlsv13_functions,
     "Cryptography_HAS_RAW_KEY": cryptography_has_raw_key,
     "Cryptography_HAS_EVP_DIGESTFINAL_XOF": (

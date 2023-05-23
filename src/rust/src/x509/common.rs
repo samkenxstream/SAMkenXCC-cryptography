@@ -4,11 +4,12 @@
 
 use crate::asn1::{oid_to_py_oid, py_oid_to_oid};
 use crate::error::{CryptographyError, CryptographyResult};
-use crate::x509;
+use crate::{exceptions, x509};
+use cryptography_x509::common::{Asn1ReadableOrWritable, AttributeTypeValue, RawTlv};
+use cryptography_x509::extensions::{AccessDescription, Extension, Extensions, RawExtensions};
+use cryptography_x509::name::{GeneralName, Name, OtherName, UnvalidatedIA5String};
 use pyo3::types::IntoPyDict;
-use pyo3::ToPyObject;
-use std::collections::HashSet;
-use std::marker::PhantomData;
+use pyo3::{IntoPy, ToPyObject};
 
 /// Parse all sections in a PEM file and return the first matching section.
 /// If no matching sections are found, return an error.
@@ -24,58 +25,6 @@ pub(crate) fn find_in_pem(
     all_sections.into_iter().find(filter_fn).ok_or_else(|| {
         CryptographyError::from(pyo3::exceptions::PyValueError::new_err(no_match_err))
     })
-}
-
-pub(crate) type Name<'a> = Asn1ReadableOrWritable<
-    'a,
-    asn1::SequenceOf<'a, asn1::SetOf<'a, AttributeTypeValue<'a>>>,
-    asn1::SequenceOfWriter<
-        'a,
-        asn1::SetOfWriter<'a, AttributeTypeValue<'a>, Vec<AttributeTypeValue<'a>>>,
-        Vec<asn1::SetOfWriter<'a, AttributeTypeValue<'a>, Vec<AttributeTypeValue<'a>>>>,
-    >,
->;
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Eq, Hash, Clone)]
-pub(crate) struct AttributeTypeValue<'a> {
-    pub(crate) type_id: asn1::ObjectIdentifier,
-    pub(crate) value: RawTlv<'a>,
-}
-
-// Like `asn1::Tlv` but doesn't store `full_data` so it can be constructed from
-// an un-encoded tag and value.
-#[derive(Hash, PartialEq, Eq, Clone)]
-pub(crate) struct RawTlv<'a> {
-    tag: asn1::Tag,
-    value: &'a [u8],
-}
-
-impl<'a> RawTlv<'a> {
-    pub(crate) fn new(tag: asn1::Tag, value: &'a [u8]) -> Self {
-        RawTlv { tag, value }
-    }
-
-    pub(crate) fn tag(&self) -> asn1::Tag {
-        self.tag
-    }
-    pub(crate) fn data(&self) -> &'a [u8] {
-        self.value
-    }
-}
-impl<'a> asn1::Asn1Readable<'a> for RawTlv<'a> {
-    fn parse(parser: &mut asn1::Parser<'a>) -> asn1::ParseResult<Self> {
-        let tlv = parser.read_element::<asn1::Tlv<'a>>()?;
-        Ok(RawTlv::new(tlv.tag(), tlv.data()))
-    }
-
-    fn can_parse(_tag: asn1::Tag) -> bool {
-        true
-    }
-}
-impl<'a> asn1::Asn1Writable for RawTlv<'a> {
-    fn write(&self, w: &mut asn1::Writer<'_>) -> asn1::WriteResult {
-        w.write_tlv(self.tag, move |dest| dest.push_slice(self.value))
-    }
 }
 
 pub(crate) fn encode_name<'p>(
@@ -145,73 +94,6 @@ fn encode_name_bytes<'p>(
     Ok(pyo3::types::PyBytes::new(py, &result))
 }
 
-/// An IA5String ASN.1 element whose contents is not validated as meeting the
-/// requirements (ASCII characters only), and instead is only known to be
-/// valid UTF-8.
-pub(crate) struct UnvalidatedIA5String<'a>(pub(crate) &'a str);
-
-impl<'a> asn1::SimpleAsn1Readable<'a> for UnvalidatedIA5String<'a> {
-    const TAG: asn1::Tag = asn1::IA5String::TAG;
-    fn parse_data(data: &'a [u8]) -> asn1::ParseResult<Self> {
-        Ok(UnvalidatedIA5String(std::str::from_utf8(data).map_err(
-            |_| asn1::ParseError::new(asn1::ParseErrorKind::InvalidValue),
-        )?))
-    }
-}
-
-impl<'a> asn1::SimpleAsn1Writable for UnvalidatedIA5String<'a> {
-    const TAG: asn1::Tag = asn1::IA5String::TAG;
-    fn write_data(&self, dest: &mut asn1::WriteBuf) -> asn1::WriteResult {
-        dest.push_slice(self.0.as_bytes())
-    }
-}
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Hash)]
-pub(crate) struct OtherName<'a> {
-    pub(crate) type_id: asn1::ObjectIdentifier,
-    #[explicit(0, required)]
-    pub(crate) value: asn1::Tlv<'a>,
-}
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write)]
-pub(crate) enum GeneralName<'a> {
-    #[implicit(0)]
-    OtherName(OtherName<'a>),
-
-    #[implicit(1)]
-    RFC822Name(UnvalidatedIA5String<'a>),
-
-    #[implicit(2)]
-    DNSName(UnvalidatedIA5String<'a>),
-
-    #[implicit(3)]
-    // unsupported
-    X400Address(asn1::Sequence<'a>),
-
-    // Name is explicit per RFC 5280 Appendix A.1.
-    #[explicit(4)]
-    DirectoryName(Name<'a>),
-
-    #[implicit(5)]
-    // unsupported
-    EDIPartyName(asn1::Sequence<'a>),
-
-    #[implicit(6)]
-    UniformResourceIdentifier(UnvalidatedIA5String<'a>),
-
-    #[implicit(7)]
-    IPAddress(&'a [u8]),
-
-    #[implicit(8)]
-    RegisteredID(asn1::ObjectIdentifier),
-}
-
-pub(crate) type SequenceOfGeneralName<'a> = Asn1ReadableOrWritable<
-    'a,
-    asn1::SequenceOf<'a, GeneralName<'a>>,
-    asn1::SequenceOfWriter<'a, GeneralName<'a>, Vec<GeneralName<'a>>>,
->;
-
 pub(crate) fn encode_general_names<'a>(
     py: pyo3::Python<'a>,
     py_gns: &'a pyo3::PyAny,
@@ -271,22 +153,10 @@ pub(crate) fn encode_general_name<'a>(
     }
 }
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write)]
-pub(crate) struct AccessDescription<'a> {
-    pub(crate) access_method: asn1::ObjectIdentifier,
-    pub(crate) access_location: GeneralName<'a>,
-}
-
-pub(crate) type SequenceOfAccessDescriptions<'a> = Asn1ReadableOrWritable<
-    'a,
-    asn1::SequenceOf<'a, AccessDescription<'a>>,
-    asn1::SequenceOfWriter<'a, AccessDescription<'a>, Vec<AccessDescription<'a>>>,
->;
-
 pub(crate) fn encode_access_descriptions<'a>(
     py: pyo3::Python<'a>,
     py_ads: &'a pyo3::PyAny,
-) -> Result<SequenceOfAccessDescriptions<'a>, CryptographyError> {
+) -> CryptographyResult<Vec<u8>> {
     let mut ads = vec![];
     for py_ad in py_ads.iter()? {
         let py_ad = py_ad?;
@@ -298,44 +168,7 @@ pub(crate) fn encode_access_descriptions<'a>(
             access_location,
         });
     }
-    Ok(Asn1ReadableOrWritable::new_write(
-        asn1::SequenceOfWriter::new(ads),
-    ))
-}
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Hash, Clone)]
-pub(crate) enum Time {
-    UtcTime(asn1::UtcTime),
-    GeneralizedTime(asn1::GeneralizedTime),
-}
-
-impl Time {
-    pub(crate) fn as_datetime(&self) -> &asn1::DateTime {
-        match self {
-            Time::UtcTime(data) => data.as_datetime(),
-            Time::GeneralizedTime(data) => data.as_datetime(),
-        }
-    }
-}
-
-pub(crate) type Extensions<'a> = Asn1ReadableOrWritable<
-    'a,
-    asn1::SequenceOf<'a, Extension<'a>>,
-    asn1::SequenceOfWriter<'a, Extension<'a>, Vec<Extension<'a>>>,
->;
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Hash, Clone)]
-pub(crate) struct AlgorithmIdentifier<'a> {
-    pub(crate) oid: asn1::ObjectIdentifier,
-    pub(crate) params: Option<asn1::Tlv<'a>>,
-}
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Eq, Hash, Clone)]
-pub(crate) struct Extension<'a> {
-    pub(crate) extn_id: asn1::ObjectIdentifier,
-    #[default(false)]
-    pub(crate) critical: bool,
-    pub(crate) extn_value: &'a [u8],
+    Ok(asn1::write_single(&asn1::SequenceOfWriter::new(ads))?)
 }
 
 pub(crate) fn parse_name<'p>(
@@ -405,10 +238,10 @@ pub(crate) fn parse_rdn<'a>(
     rdn: &asn1::SetOf<'a, AttributeTypeValue<'a>>,
 ) -> Result<pyo3::PyObject, CryptographyError> {
     let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
-    let py_attrs = pyo3::types::PySet::empty(py)?;
+    let py_attrs = pyo3::types::PyList::empty(py);
     for attribute in rdn.clone() {
         let na = parse_name_attribute(py, attribute)?;
-        py_attrs.add(na)?;
+        py_attrs.append(na)?;
     }
     Ok(x509_module
         .call_method1(pyo3::intern!(py, "RelativeDistinguishedName"), (py_attrs,))?
@@ -470,12 +303,11 @@ pub(crate) fn parse_general_name(
                 .to_object(py)
         }
         _ => {
-            return Err(CryptographyError::from(pyo3::PyErr::from_value(
-                x509_module.call_method1(
-                    "UnsupportedGeneralNameType",
-                    ("x400Address/EDIPartyName are not supported types",),
-                )?,
-            )))
+            return Err(CryptographyError::from(
+                exceptions::UnsupportedGeneralNameType::new_err(
+                    "x400Address/EDIPartyName are not supported types",
+                ),
+            ))
         }
     };
     Ok(py_gn)
@@ -558,29 +390,29 @@ pub(crate) fn parse_and_cache_extensions<
 >(
     py: pyo3::Python<'p>,
     cached_extensions: &mut Option<pyo3::PyObject>,
-    raw_exts: &Option<Extensions<'_>>,
+    raw_extensions: &Option<RawExtensions<'_>>,
     parse_ext: F,
 ) -> pyo3::PyResult<pyo3::PyObject> {
     if let Some(cached) = cached_extensions {
         return Ok(cached.clone_ref(py));
     }
 
+    let extensions = match Extensions::from_raw_extensions(raw_extensions.as_ref()) {
+        Ok(extensions) => extensions,
+        Err(oid) => {
+            let oid_obj = oid_to_py_oid(py, &oid)?;
+            return Err(exceptions::DuplicateExtension::new_err((
+                format!("Duplicate {} extension found", oid),
+                oid_obj.into_py(py),
+            )));
+        }
+    };
+
     let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
     let exts = pyo3::types::PyList::empty(py);
-    let mut seen_oids = HashSet::new();
-    if let Some(raw_exts) = raw_exts {
-        for raw_ext in raw_exts.unwrap_read().clone() {
+    if let Some(extensions) = extensions.as_raw() {
+        for raw_ext in extensions.unwrap_read().clone() {
             let oid_obj = oid_to_py_oid(py, &raw_ext.extn_id)?;
-
-            if seen_oids.contains(&raw_ext.extn_id) {
-                return Err(pyo3::PyErr::from_value(x509_module.call_method1(
-                    "DuplicateExtension",
-                    (
-                        format!("Duplicate {} extension found", raw_ext.extn_id),
-                        oid_obj,
-                    ),
-                )?));
-            }
 
             let extn_value = match parse_ext(&raw_ext.extn_id, raw_ext.extn_value)? {
                 Some(e) => e,
@@ -594,7 +426,6 @@ pub(crate) fn parse_and_cache_extensions<
                 (oid_obj, raw_ext.critical, extn_value),
             )?;
             exts.append(ext_obj)?;
-            seen_oids.insert(raw_ext.extn_id);
         }
     }
     let extensions = x509_module
@@ -615,7 +446,7 @@ pub(crate) fn encode_extensions<
     py: pyo3::Python<'p>,
     py_exts: &'p pyo3::PyAny,
     encode_ext: F,
-) -> pyo3::PyResult<Option<Extensions<'p>>> {
+) -> pyo3::PyResult<Option<RawExtensions<'p>>> {
     let unrecognized_extension_type: &pyo3::types::PyType = py
         .import(pyo3::intern!(py, "cryptography.x509"))?
         .getattr(pyo3::intern!(py, "UnrecognizedExtension"))?
@@ -723,77 +554,9 @@ pub(crate) fn datetime_now(py: pyo3::Python<'_>) -> pyo3::PyResult<asn1::DateTim
     )
 }
 
-#[derive(Hash, PartialEq, Clone)]
-pub(crate) enum Asn1ReadableOrWritable<'a, T, U> {
-    Read(T, PhantomData<&'a ()>),
-    Write(U, PhantomData<&'a ()>),
-}
-
-impl<'a, T, U> Asn1ReadableOrWritable<'a, T, U> {
-    pub(crate) fn new_read(v: T) -> Self {
-        Asn1ReadableOrWritable::Read(v, PhantomData)
-    }
-
-    pub(crate) fn new_write(v: U) -> Self {
-        Asn1ReadableOrWritable::Write(v, PhantomData)
-    }
-
-    pub(crate) fn unwrap_read(&self) -> &T {
-        match self {
-            Asn1ReadableOrWritable::Read(v, _) => v,
-            Asn1ReadableOrWritable::Write(_, _) => panic!("unwrap_read called on a Write value"),
-        }
-    }
-}
-
-impl<'a, T: asn1::SimpleAsn1Readable<'a>, U> asn1::SimpleAsn1Readable<'a>
-    for Asn1ReadableOrWritable<'a, T, U>
-{
-    const TAG: asn1::Tag = T::TAG;
-    fn parse_data(data: &'a [u8]) -> asn1::ParseResult<Self> {
-        Ok(Self::new_read(T::parse_data(data)?))
-    }
-}
-
-impl<'a, T: asn1::SimpleAsn1Writable, U: asn1::SimpleAsn1Writable> asn1::SimpleAsn1Writable
-    for Asn1ReadableOrWritable<'a, T, U>
-{
-    const TAG: asn1::Tag = U::TAG;
-    fn write_data(&self, w: &mut asn1::WriteBuf) -> asn1::WriteResult {
-        match self {
-            Asn1ReadableOrWritable::Read(v, _) => T::write_data(v, w),
-            Asn1ReadableOrWritable::Write(v, _) => U::write_data(v, w),
-        }
-    }
-}
-
 pub(crate) fn add_to_module(module: &pyo3::prelude::PyModule) -> pyo3::PyResult<()> {
-    module.add_wrapped(pyo3::wrap_pyfunction!(encode_extension_value))?;
-    module.add_wrapped(pyo3::wrap_pyfunction!(encode_name_bytes))?;
+    module.add_function(pyo3::wrap_pyfunction!(encode_extension_value, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(encode_name_bytes, module)?)?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Asn1ReadableOrWritable, RawTlv};
-    use asn1::Asn1Readable;
-
-    #[test]
-    #[should_panic]
-    fn test_asn1_readable_or_writable_unwrap_read() {
-        Asn1ReadableOrWritable::<u32, u32>::new_write(17).unwrap_read();
-    }
-
-    #[test]
-    fn test_asn1_readable_or_writable_write_read_data() {
-        let v = Asn1ReadableOrWritable::<u32, u32>::new_read(17);
-        assert_eq!(&asn1::write_single(&v).unwrap(), b"\x02\x01\x11");
-    }
-
-    #[test]
-    fn test_raw_tlv_can_parse() {
-        let t = asn1::Tag::from_bytes(&[0]).unwrap().0;
-        assert!(RawTlv::can_parse(t));
-    }
 }

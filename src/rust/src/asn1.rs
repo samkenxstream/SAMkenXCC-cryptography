@@ -3,7 +3,10 @@
 // for complete details.
 
 use crate::error::{CryptographyError, CryptographyResult};
-use crate::x509::Name;
+use asn1::SimpleAsn1Readable;
+use cryptography_x509::certificate::Certificate;
+use cryptography_x509::common::{DssSignature, SubjectPublicKeyInfo, Time};
+use cryptography_x509::name::Name;
 use pyo3::basic::CompareOp;
 use pyo3::types::IntoPyDict;
 use pyo3::ToPyObject;
@@ -23,35 +26,17 @@ pub(crate) fn oid_to_py_oid<'p>(
     Ok(pyo3::Py::new(py, crate::oid::ObjectIdentifier { oid: oid.clone() })?.into_ref(py))
 }
 
-#[derive(asn1::Asn1Read)]
-struct AlgorithmIdentifier<'a> {
-    _oid: asn1::ObjectIdentifier,
-    _params: Option<asn1::Tlv<'a>>,
-}
-
-#[derive(asn1::Asn1Read)]
-struct Spki<'a> {
-    _algorithm: AlgorithmIdentifier<'a>,
-    data: asn1::BitString<'a>,
-}
-
 #[pyo3::prelude::pyfunction]
 fn parse_spki_for_data(
     py: pyo3::Python<'_>,
     data: &[u8],
 ) -> Result<pyo3::PyObject, CryptographyError> {
-    let spki = asn1::parse_single::<Spki<'_>>(data)?;
-    if spki.data.padding_bits() != 0 {
+    let spki = asn1::parse_single::<SubjectPublicKeyInfo<'_>>(data)?;
+    if spki.subject_public_key.padding_bits() != 0 {
         return Err(pyo3::exceptions::PyValueError::new_err("Invalid public key encoding").into());
     }
 
-    Ok(pyo3::types::PyBytes::new(py, spki.data.as_bytes()).to_object(py))
-}
-
-#[derive(asn1::Asn1Read, asn1::Asn1Write)]
-struct DssSignature<'a> {
-    r: asn1::BigUint<'a>,
-    s: asn1::BigUint<'a>,
+    Ok(pyo3::types::PyBytes::new(py, spki.subject_public_key.as_bytes()).to_object(py))
 }
 
 pub(crate) fn big_byte_slice_to_py_int<'p>(
@@ -163,39 +148,6 @@ struct TestCertificate {
     subject_value_tags: Vec<u8>,
 }
 
-#[derive(asn1::Asn1Read)]
-struct Asn1Certificate<'a> {
-    tbs_cert: TbsCertificate<'a>,
-    _signature_alg: asn1::Sequence<'a>,
-    _signature: asn1::BitString<'a>,
-}
-
-#[derive(asn1::Asn1Read)]
-struct TbsCertificate<'a> {
-    #[explicit(0)]
-    _version: Option<u8>,
-    _serial: asn1::BigUint<'a>,
-    _signature_alg: asn1::Sequence<'a>,
-
-    issuer: Name<'a>,
-    validity: Validity<'a>,
-    subject: Name<'a>,
-
-    _spki: asn1::Sequence<'a>,
-    #[implicit(1)]
-    _issuer_unique_id: Option<asn1::BitString<'a>>,
-    #[implicit(2)]
-    _subject_unique_id: Option<asn1::BitString<'a>>,
-    #[explicit(3)]
-    _extensions: Option<asn1::Sequence<'a>>,
-}
-
-#[derive(asn1::Asn1Read)]
-struct Validity<'a> {
-    not_before: asn1::Tlv<'a>,
-    not_after: asn1::Tlv<'a>,
-}
-
 fn parse_name_value_tags(rdns: &mut Name<'_>) -> Vec<u8> {
     let mut tags = vec![];
     for rdn in rdns.unwrap_read().clone() {
@@ -207,32 +159,33 @@ fn parse_name_value_tags(rdns: &mut Name<'_>) -> Vec<u8> {
     tags
 }
 
+fn time_tag(t: &Time) -> u8 {
+    match t {
+        Time::UtcTime(_) => asn1::UtcTime::TAG.as_u8().unwrap(),
+        Time::GeneralizedTime(_) => asn1::GeneralizedTime::TAG.as_u8().unwrap(),
+    }
+}
+
 #[pyo3::prelude::pyfunction]
 fn test_parse_certificate(data: &[u8]) -> Result<TestCertificate, CryptographyError> {
-    let mut asn1_cert = asn1::parse_single::<Asn1Certificate<'_>>(data)?;
+    let mut cert = asn1::parse_single::<Certificate<'_>>(data)?;
 
     Ok(TestCertificate {
-        not_before_tag: asn1_cert
-            .tbs_cert
-            .validity
-            .not_before
-            .tag()
-            .as_u8()
-            .unwrap(),
-        not_after_tag: asn1_cert.tbs_cert.validity.not_after.tag().as_u8().unwrap(),
-        issuer_value_tags: parse_name_value_tags(&mut asn1_cert.tbs_cert.issuer),
-        subject_value_tags: parse_name_value_tags(&mut asn1_cert.tbs_cert.subject),
+        not_before_tag: time_tag(&cert.tbs_cert.validity.not_before),
+        not_after_tag: time_tag(&cert.tbs_cert.validity.not_after),
+        issuer_value_tags: parse_name_value_tags(&mut cert.tbs_cert.issuer),
+        subject_value_tags: parse_name_value_tags(&mut cert.tbs_cert.subject),
     })
 }
 
 pub(crate) fn create_submodule(py: pyo3::Python<'_>) -> pyo3::PyResult<&pyo3::prelude::PyModule> {
     let submod = pyo3::prelude::PyModule::new(py, "asn1")?;
-    submod.add_wrapped(pyo3::wrap_pyfunction!(parse_spki_for_data))?;
+    submod.add_function(pyo3::wrap_pyfunction!(parse_spki_for_data, submod)?)?;
 
-    submod.add_wrapped(pyo3::wrap_pyfunction!(decode_dss_signature))?;
-    submod.add_wrapped(pyo3::wrap_pyfunction!(encode_dss_signature))?;
+    submod.add_function(pyo3::wrap_pyfunction!(decode_dss_signature, submod)?)?;
+    submod.add_function(pyo3::wrap_pyfunction!(encode_dss_signature, submod)?)?;
 
-    submod.add_wrapped(pyo3::wrap_pyfunction!(test_parse_certificate))?;
+    submod.add_function(pyo3::wrap_pyfunction!(test_parse_certificate, submod)?)?;
 
     Ok(submod)
 }

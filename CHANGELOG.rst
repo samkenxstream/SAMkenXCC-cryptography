@@ -11,6 +11,7 @@ Changelog
 * **BACKWARDS INCOMPATIBLE:** Support for OpenSSL less than 1.1.1d has been
   removed.  Users on older version of OpenSSL will need to upgrade.
 * **BACKWARDS INCOMPATIBLE:** Support for Python 3.6 has been removed.
+* **BACKWARDS INCOMPATIBLE:** Dropped support for LibreSSL < 3.6.
 * Updated the minimum supported Rust version (MSRV) to 1.56.0, from 1.48.0.
 * Added support for the :class:`~cryptography.x509.OCSPAcceptableResponses`
   OCSP extension.
@@ -19,6 +20,12 @@ Changelog
 * Implemented support for equality checks on all asymmetric public key types.
 * Added support for ``aes256-gcm@openssh.com`` encrypted keys in
   :func:`~cryptography.hazmat.primitives.serialization.load_ssh_private_key`.
+* Added support for obtaining X.509 certificate signature algorithm parameters
+  (including PSS) via
+  :meth:`~cryptography.x509.Certificate.signature_algorithm_parameters`.
+* Support signing :class:`~cryptography.hazmat.primitives.asymmetric.padding.PSS`
+  X.509 certificates via the new keyword-only argument ``rsa_padding`` on
+  :meth:`~cryptography.x509.CertificateBuilder.sign`.
 
 .. _v40-0-2:
 

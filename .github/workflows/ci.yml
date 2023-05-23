@@ -37,15 +37,14 @@ jobs:
           - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "openssl", VERSION: "3.1.0", CONFIG_FLAGS: "no-engine no-rc2 no-srtp no-ct no-psk"}}
           - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "openssl", VERSION: "3.1.0", CONFIG_FLAGS: "no-legacy", NO_LEGACY: "1"}}
           - {VERSION: "3.11", NOXSESSION: "tests", NOXARGS: "--enable-fips=1", OPENSSL: {TYPE: "openssl", CONFIG_FLAGS: "enable-fips", VERSION: "3.1.0"}}
-          - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "libressl", VERSION: "3.5.4"}}
           - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "libressl", VERSION: "3.6.2"}}
           - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "libressl", VERSION: "3.7.2"}}
           - {VERSION: "3.11", NOXSESSION: "tests-randomorder"}
           - {VERSION: "3.12-dev", NOXSESSION: "tests"}
-          # Latest commit on the BoringSSL master branch, as of Apr 15, 2023.
-          - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "boringssl", VERSION: "d3acd45456450f7e8091f0f56084bc2da93e48fe"}}
-          # Latest commit on the OpenSSL master branch, as of Apr 15, 2023.
-          - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "openssl", VERSION: "7eab7680ee61c64b2ae7acd9dd199ab6734f3d1f"}}
+          # Latest commit on the BoringSSL master branch, as of May 20, 2023.
+          - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "boringssl", VERSION: "8abcb6fb41cbb29e93ed82048bb3d59bc8e6717f"}}
+          # Latest commit on the OpenSSL master branch, as of May 23, 2023.
+          - {VERSION: "3.11", NOXSESSION: "tests", OPENSSL: {TYPE: "openssl", VERSION: "ab17dd8fa3db3e1be82dabfc9fde5dc6181e3f49"}}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v3.5.2
@@ -57,9 +56,10 @@ jobs:
         uses: ./.github/actions/mtime-fix
       - name: Setup python
         id: setup-python
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: ${{ matrix.PYTHON.VERSION }}
+      - run: rustup component add llvm-tools-preview
       - name: Clone wycheproof
         timeout-minutes: 2
         uses: ./.github/actions/wycheproof
@@ -106,7 +106,7 @@ jobs:
           # pypy3-3.8 and pypy3-3.9 -- both of them show up as 7.3.11.
           key: ${{ matrix.PYTHON.VERSION }}-${{ steps.setup-python.outputs.python-version }}-${{ matrix.PYTHON.NOXSESSION }}-${{ env.OPENSSL_HASH }}
 
-      - run: python -m pip install -c ci-constraints-requirements.txt 'nox' coverage[toml]
+      - run: python -m pip install -c ci-constraints-requirements.txt 'nox'
       - name: Create nox environment
         run: |
             nox -v --install-only
@@ -131,23 +131,25 @@ jobs:
       fail-fast: false
       matrix:
         IMAGE:
-          - {IMAGE: "rhel8", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "rhel8-fips", RUNNER: "ubuntu-latest", FIPS: true}
-          - {IMAGE: "buster", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "bullseye", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "bookworm", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "sid", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "ubuntu-focal", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "ubuntu-jammy", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "ubuntu-rolling", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "fedora", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "alpine", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "centos-stream9", RUNNER: "ubuntu-latest"}
-          - {IMAGE: "centos-stream9-fips", RUNNER: "ubuntu-latest", FIPS: true}
+          - {IMAGE: "rhel8", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "rhel8-fips", NOXSESSION: "tests", RUNNER: "ubuntu-latest", FIPS: true}
+          - {IMAGE: "buster", NOXSESSION: "tests-nocoverage", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "bullseye", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "bookworm", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "sid", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "ubuntu-focal", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "ubuntu-jammy", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "ubuntu-rolling", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "fedora", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "alpine", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "centos-stream9", NOXSESSION: "tests", RUNNER: "ubuntu-latest"}
+          - {IMAGE: "centos-stream9-fips", NOXSESSION: "tests", RUNNER: "ubuntu-latest", FIPS: true}
 
-          - {IMAGE: "ubuntu-jammy:aarch64", RUNNER: [self-hosted, Linux, ARM64]}
-          - {IMAGE: "alpine:aarch64", RUNNER: [self-hosted, Linux, ARM64]}
+          - {IMAGE: "ubuntu-jammy:aarch64", NOXSESSION: "tests", RUNNER: [self-hosted, Linux, ARM64]}
+          - {IMAGE: "alpine:aarch64", NOXSESSION: "tests-nocoverage", RUNNER: [self-hosted, Linux, ARM64]}
     timeout-minutes: 15
+    env:
+      RUSTUP_HOME: /root/.rustup
     steps:
       - name: Ridiculous alpine workaround for actions support on arm64
         run: |
@@ -183,18 +185,19 @@ jobs:
       - run: |
           echo "OPENSSL_FORCE_FIPS_MODE=1" >> $GITHUB_ENV
         if: matrix.IMAGE.FIPS
-      - run: /venv/bin/python -m pip install -c ci-constraints-requirements.txt 'nox' coverage
-      - run: '/venv/bin/nox -v --install-only -s tests'
+      - run: /venv/bin/python -m pip install -c ci-constraints-requirements.txt 'nox'
+      - run: '/venv/bin/nox -v --install-only'
         env:
-          RUSTUP_HOME: /root/.rustup
           CARGO_TARGET_DIR: ${{ format('{0}/src/rust/target/', github.workspace) }}
           # OPENSSL_ENABLE_SHA1_SIGNATURES is for CentOS 9 Stream
           OPENSSL_ENABLE_SHA1_SIGNATURES: 1
-      - run: '/venv/bin/nox --no-install -s tests --  --color=yes --wycheproof-root="wycheproof"'
+          NOXSESSION: ${{ matrix.IMAGE.NOXSESSION }}
+      - run: '/venv/bin/nox --no-install --  --color=yes --wycheproof-root="wycheproof"'
         env:
           COLUMNS: 80
           # OPENSSL_ENABLE_SHA1_SIGNATURES is for CentOS 9 Stream
           OPENSSL_ENABLE_SHA1_SIGNATURES: 1
+          NOXSESSION: ${{ matrix.IMAGE.NOXSESSION }}
       - uses: ./.github/actions/upload-coverage
 
   linux-rust:
@@ -220,10 +223,8 @@ jobs:
       - name: Cache rust and pip
         uses: ./.github/actions/cache
         timeout-minutes: 2
-        with:
-          key: ${{ matrix.RUST }}
       - name: Setup python
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: ${{ matrix.PYTHON }}
       - uses: dtolnay/rust-toolchain@52e69531e6f69a396bc9d1226284493a5db969ff
@@ -232,13 +233,13 @@ jobs:
       - name: Clone wycheproof
         timeout-minutes: 2
         uses: ./.github/actions/wycheproof
-      - run: python -m pip install -c ci-constraints-requirements.txt 'nox' coverage[toml]
+      - run: python -m pip install -c ci-constraints-requirements.txt 'nox'
       - name: Create nox environment
-        run: nox -v --install-only -s tests
+        run: nox -v --install-only -s tests-nocoverage
         env:
           CARGO_TARGET_DIR: ${{ format('{0}/src/rust/target/', github.workspace) }}
       - name: Tests
-        run: nox --no-install -s tests --  --color=yes  --wycheproof-root=wycheproof
+        run: nox --no-install -s tests-nocoverage --  --color=yes  --wycheproof-root=wycheproof
         env:
           COLUMNS: 80
       - uses: ./.github/actions/upload-coverage
@@ -270,86 +271,31 @@ jobs:
         id: rust-toolchain
         with:
           toolchain: ${{ matrix.RUST }}
-          components: llvm-tools-preview
+          components: llvm-tools-preview,rustfmt,clippy
       - name: Cache rust and pip
         id: cargo-cache
         uses: ./.github/actions/cache
         timeout-minutes: 2
         with:
-          key: ${{ steps.rust-toolchain.outputs.cachekey }}-coverage
-          additional-paths: |
-            ~/.cargo/bin/cargo-cov
-            ~/.cargo/bin/cargo-nm
-            ~/.cargo/bin/cargo-objcopy
-            ~/.cargo/bin/cargo-objdump
-            ~/.cargo/bin/cargo-profdata
-            ~/.cargo/bin/cargo-readobj
-            ~/.cargo/bin/cargo-size
-            ~/.cargo/bin/cargo-strip
-            ~/.cargo/bin/rust-ar
-            ~/.cargo/bin/rust-cov
-            ~/.cargo/bin/rust-ld
-            ~/.cargo/bin/rust-lld
-            ~/.cargo/bin/rust-nm
-            ~/.cargo/bin/rust-objcopy
-            ~/.cargo/bin/rust-objdump
-            ~/.cargo/bin/rust-profdata
-            ~/.cargo/bin/rust-readobj
-            ~/.cargo/bin/rust-size
-            ~/.cargo/bin/rust-strip
+          key: coverage
       - name: Setup python
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: ${{ matrix.PYTHON }}
-      - run: cargo install cargo-binutils
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
 
       - name: Clone wycheproof
         timeout-minutes: 2
         uses: ./.github/actions/wycheproof
-      - run: python -m pip install -c ci-constraints-requirements.txt 'nox' coverage[toml] cffi
+      - run: python -m pip install -c ci-constraints-requirements.txt 'nox'
       - name: Create nox environment
-        run: nox -v --install-only -s tests
+        run: nox -v --install-only -s tests rust
         env:
           CARGO_TARGET_DIR: ${{ format('{0}/src/rust/target/', github.workspace) }}
-          RUSTFLAGS: "-Cinstrument-coverage"
-          LLVM_PROFILE_FILE: "rust-cov/cov-%p.profraw"
       - name: Tests
-        run: nox --no-install -s tests --  --color=yes --wycheproof-root=wycheproof
+        run: nox --no-install -s tests rust --  --color=yes --wycheproof-root=wycheproof
         env:
           COLUMNS: 80
           CARGO_TARGET_DIR: ${{ format('{0}/src/rust/target/', github.workspace) }}
-          RUSTFLAGS: "-Cinstrument-coverage"
-          LLVM_PROFILE_FILE: "rust-cov/cov-%p.profraw"
-      - name: Rust Tests
-        run: |
-            cd src/rust
-            cargo test --no-default-features
-        env:
-          RUSTFLAGS: "-Cinstrument-coverage"
-          LLVM_PROFILE_FILE: "rust-cov/cov-%m-%p.profraw"
-      - name: Process coverage data
-        run: |
-            set -xe
-            cd src/rust/
-            cargo profdata -- merge -sparse ../../rust-cov/*.profraw -o pytest-rust-cov.profdata
-            cargo profdata -- merge -sparse rust-cov/*.profraw -o cargo-test-rust-cov.profdata
-            COV_UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
-
-            cargo cov -- export \
-              ../../.nox/tests/lib/python${{ matrix.PYTHON }}/site-packages/cryptography/hazmat/bindings/_rust.abi3.so \
-              -instr-profile=pytest-rust-cov.profdata \
-              --ignore-filename-regex='/.cargo/registry' \
-              --ignore-filename-regex='/rustc/' \
-              --ignore-filename-regex='/.rustup/toolchains/' --format=lcov > ../../${COV_UUID}-1.lcov
-            cargo cov -- export \
-              $(env RUSTFLAGS="-Cinstrument-coverage" cargo test --no-default-features --tests --no-run --message-format=json | jq -r "select(.profile.test == true) | .filenames[]") \
-              -instr-profile=cargo-test-rust-cov.profdata \
-              --ignore-filename-regex='/.cargo/registry' \
-              --ignore-filename-regex='/rustc/' \
-              --ignore-filename-regex='/.rustup/toolchains/' --format=lcov > ../../${COV_UUID}-2.lcov
-
-            sed -E -i 's/SF:(.*)\/src\/rust\/(.*)/SF:src\/rust\/\2/g' ../../*.lcov
       - uses: ./.github/actions/upload-coverage
 
   macos:
@@ -383,12 +329,13 @@ jobs:
           key: ${{ matrix.PYTHON.NOXSESSION }}-${{ matrix.PYTHON.VERSION }}
 
       - name: Setup python
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: ${{ matrix.PYTHON.VERSION }}
           architecture: 'x64' # we force this right now so that it will install the universal2 on arm64
+      - run: rustup component add llvm-tools-preview
 
-      - run: python -m pip install -c ci-constraints-requirements.txt 'nox' coverage[toml]
+      - run: python -m pip install -c ci-constraints-requirements.txt 'nox'
 
       - name: Clone wycheproof
         timeout-minutes: 2
@@ -442,16 +389,17 @@ jobs:
         uses: ./.github/actions/mtime-fix
       - name: Setup python
         id: setup-python
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: ${{ matrix.PYTHON.VERSION }}
           architecture: ${{ matrix.WINDOWS.ARCH }}
+      - run: rustup component add llvm-tools-preview
       - name: Cache rust and pip
         uses: ./.github/actions/cache
         timeout-minutes: 2
         with:
           key: ${{ matrix.PYTHON.NOXSESSION }}-${{ matrix.WINDOWS.ARCH }}-${{ steps.setup-python.outputs.python-version }}
-      - run: python -m pip install -c ci-constraints-requirements.txt "nox" coverage[toml]
+      - run: python -m pip install -c ci-constraints-requirements.txt "nox"
 
       - uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
         with:
@@ -517,7 +465,7 @@ jobs:
         uses: ./.github/actions/cache
         timeout-minutes: 2
       - name: Setup python
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: ${{ matrix.PYTHON }}
       - run: ./.github/downstream.d/${{ matrix.DOWNSTREAM }}.sh install
@@ -559,7 +507,7 @@ jobs:
           jobs: ${{ toJSON(needs) }}
       - name: Setup python
         if: ${{ always() }}
-        uses: actions/setup-python@v4.5.0
+        uses: actions/setup-python@v4.6.0
         with:
           python-version: '3.11'
       - run: pip install -c ci-constraints-requirements.txt coverage[toml]

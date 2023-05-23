@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import (
     ec,
     ed448,
     ed25519,
+    padding,
     rsa,
     x448,
     x25519,
@@ -230,6 +231,15 @@ class Certificate(metaclass=abc.ABCMeta):
     def signature_algorithm_oid(self) -> ObjectIdentifier:
         """
         Returns the ObjectIdentifier of the signature algorithm.
+        """
+
+    @property
+    @abc.abstractmethod
+    def signature_algorithm_parameters(
+        self,
+    ) -> typing.Union[None, padding.PSS, padding.PKCS1v15, ec.ECDSA]:
+        """
+        Returns the signature algorithm parameters.
         """
 
     @property
@@ -914,6 +924,10 @@ class CertificateBuilder:
         private_key: CertificateIssuerPrivateKeyTypes,
         algorithm: typing.Optional[_AllowedHashTypes],
         backend: typing.Any = None,
+        *,
+        rsa_padding: typing.Optional[
+            typing.Union[padding.PSS, padding.PKCS1v15]
+        ] = None,
     ) -> Certificate:
         """
         Signs the certificate using the CA's private key.
@@ -936,7 +950,15 @@ class CertificateBuilder:
         if self._public_key is None:
             raise ValueError("A certificate must have a public key")
 
-        return rust_x509.create_x509_certificate(self, private_key, algorithm)
+        if rsa_padding is not None:
+            if not isinstance(rsa_padding, (padding.PSS, padding.PKCS1v15)):
+                raise TypeError("Padding must be PSS or PKCS1v15")
+            if not isinstance(private_key, rsa.RSAPrivateKey):
+                raise TypeError("Padding is only supported for RSA keys")
+
+        return rust_x509.create_x509_certificate(
+            self, private_key, algorithm, rsa_padding
+        )
 
 
 class CertificateRevocationListBuilder:
