@@ -15,18 +15,9 @@ from cryptography.exceptions import UnsupportedAlgorithm, _Reasons
 from cryptography.hazmat.backends.openssl import aead
 from cryptography.hazmat.backends.openssl.ciphers import _CipherContext
 from cryptography.hazmat.backends.openssl.cmac import _CMACContext
-from cryptography.hazmat.backends.openssl.dsa import (
-    _DSAParameters,
-    _DSAPrivateKey,
-    _DSAPublicKey,
-)
 from cryptography.hazmat.backends.openssl.ec import (
     _EllipticCurvePrivateKey,
     _EllipticCurvePublicKey,
-)
-from cryptography.hazmat.backends.openssl.poly1305 import (
-    _POLY1305_KEY_SIZE,
-    _Poly1305Context,
 )
 from cryptography.hazmat.backends.openssl.rsa import (
     _RSAPrivateKey,
@@ -45,6 +36,9 @@ from cryptography.hazmat.primitives.asymmetric import (
     rsa,
     x448,
     x25519,
+)
+from cryptography.hazmat.primitives.asymmetric import (
+    utils as asym_utils,
 )
 from cryptography.hazmat.primitives.asymmetric.padding import (
     MGF1,
@@ -555,10 +549,9 @@ class Backend:
                 unsafe_skip_rsa_key_validation=unsafe_skip_rsa_key_validation,
             )
         elif key_type == self._lib.EVP_PKEY_DSA:
-            dsa_cdata = self._lib.EVP_PKEY_get1_DSA(evp_pkey)
-            self.openssl_assert(dsa_cdata != self._ffi.NULL)
-            dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
-            return _DSAPrivateKey(self, dsa_cdata, evp_pkey)
+            return rust_openssl.dsa.private_key_from_ptr(
+                int(self._ffi.cast("uintptr_t", evp_pkey))
+            )
         elif key_type == self._lib.EVP_PKEY_EC:
             ec_cdata = self._lib.EVP_PKEY_get1_EC_KEY(evp_pkey)
             self.openssl_assert(ec_cdata != self._ffi.NULL)
@@ -617,10 +610,9 @@ class Backend:
             self.openssl_assert(res == 1)
             return self.load_der_public_key(self._read_mem_bio(bio))
         elif key_type == self._lib.EVP_PKEY_DSA:
-            dsa_cdata = self._lib.EVP_PKEY_get1_DSA(evp_pkey)
-            self.openssl_assert(dsa_cdata != self._ffi.NULL)
-            dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
-            return _DSAPublicKey(self, dsa_cdata, evp_pkey)
+            return rust_openssl.dsa.public_key_from_ptr(
+                int(self._ffi.cast("uintptr_t", evp_pkey))
+            )
         elif key_type == self._lib.EVP_PKEY_EC:
             ec_cdata = self._lib.EVP_PKEY_get1_EC_KEY(evp_pkey)
             if ec_cdata == self._ffi.NULL:
@@ -700,36 +692,12 @@ class Backend:
                 "Key size must be 1024, 2048, 3072, or 4096 bits."
             )
 
-        ctx = self._lib.DSA_new()
-        self.openssl_assert(ctx != self._ffi.NULL)
-        ctx = self._ffi.gc(ctx, self._lib.DSA_free)
-
-        res = self._lib.DSA_generate_parameters_ex(
-            ctx,
-            key_size,
-            self._ffi.NULL,
-            0,
-            self._ffi.NULL,
-            self._ffi.NULL,
-            self._ffi.NULL,
-        )
-
-        self.openssl_assert(res == 1)
-
-        return _DSAParameters(self, ctx)
+        return rust_openssl.dsa.generate_parameters(key_size)
 
     def generate_dsa_private_key(
         self, parameters: dsa.DSAParameters
     ) -> dsa.DSAPrivateKey:
-        ctx = self._lib.DSAparams_dup(
-            parameters._dsa_cdata  # type: ignore[attr-defined]
-        )
-        self.openssl_assert(ctx != self._ffi.NULL)
-        ctx = self._ffi.gc(ctx, self._lib.DSA_free)
-        self._lib.DSA_generate_key(ctx)
-        evp_pkey = self._dsa_cdata_to_evp_pkey(ctx)
-
-        return _DSAPrivateKey(self, ctx, evp_pkey)
+        return parameters.generate_private_key()
 
     def generate_dsa_private_key_and_parameters(
         self, key_size: int
@@ -737,78 +705,28 @@ class Backend:
         parameters = self.generate_dsa_parameters(key_size)
         return self.generate_dsa_private_key(parameters)
 
-    def _dsa_cdata_set_values(
-        self, dsa_cdata, p, q, g, pub_key, priv_key
-    ) -> None:
-        res = self._lib.DSA_set0_pqg(dsa_cdata, p, q, g)
-        self.openssl_assert(res == 1)
-        res = self._lib.DSA_set0_key(dsa_cdata, pub_key, priv_key)
-        self.openssl_assert(res == 1)
-
     def load_dsa_private_numbers(
         self, numbers: dsa.DSAPrivateNumbers
     ) -> dsa.DSAPrivateKey:
         dsa._check_dsa_private_numbers(numbers)
-        parameter_numbers = numbers.public_numbers.parameter_numbers
-
-        dsa_cdata = self._lib.DSA_new()
-        self.openssl_assert(dsa_cdata != self._ffi.NULL)
-        dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
-
-        p = self._int_to_bn(parameter_numbers.p)
-        q = self._int_to_bn(parameter_numbers.q)
-        g = self._int_to_bn(parameter_numbers.g)
-        pub_key = self._int_to_bn(numbers.public_numbers.y)
-        priv_key = self._int_to_bn(numbers.x)
-        self._dsa_cdata_set_values(dsa_cdata, p, q, g, pub_key, priv_key)
-
-        evp_pkey = self._dsa_cdata_to_evp_pkey(dsa_cdata)
-
-        return _DSAPrivateKey(self, dsa_cdata, evp_pkey)
+        return rust_openssl.dsa.from_private_numbers(numbers)
 
     def load_dsa_public_numbers(
         self, numbers: dsa.DSAPublicNumbers
     ) -> dsa.DSAPublicKey:
         dsa._check_dsa_parameters(numbers.parameter_numbers)
-        dsa_cdata = self._lib.DSA_new()
-        self.openssl_assert(dsa_cdata != self._ffi.NULL)
-        dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
-
-        p = self._int_to_bn(numbers.parameter_numbers.p)
-        q = self._int_to_bn(numbers.parameter_numbers.q)
-        g = self._int_to_bn(numbers.parameter_numbers.g)
-        pub_key = self._int_to_bn(numbers.y)
-        priv_key = self._ffi.NULL
-        self._dsa_cdata_set_values(dsa_cdata, p, q, g, pub_key, priv_key)
-
-        evp_pkey = self._dsa_cdata_to_evp_pkey(dsa_cdata)
-
-        return _DSAPublicKey(self, dsa_cdata, evp_pkey)
+        return rust_openssl.dsa.from_public_numbers(numbers)
 
     def load_dsa_parameter_numbers(
         self, numbers: dsa.DSAParameterNumbers
     ) -> dsa.DSAParameters:
         dsa._check_dsa_parameters(numbers)
-        dsa_cdata = self._lib.DSA_new()
-        self.openssl_assert(dsa_cdata != self._ffi.NULL)
-        dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
-
-        p = self._int_to_bn(numbers.p)
-        q = self._int_to_bn(numbers.q)
-        g = self._int_to_bn(numbers.g)
-        res = self._lib.DSA_set0_pqg(dsa_cdata, p, q, g)
-        self.openssl_assert(res == 1)
-
-        return _DSAParameters(self, dsa_cdata)
-
-    def _dsa_cdata_to_evp_pkey(self, dsa_cdata):
-        evp_pkey = self._create_evp_pkey_gc()
-        res = self._lib.EVP_PKEY_set1_DSA(evp_pkey, dsa_cdata)
-        self.openssl_assert(res == 1)
-        return evp_pkey
+        return rust_openssl.dsa.from_parameter_numbers(numbers)
 
     def dsa_supported(self) -> bool:
-        return not self._fips_enabled
+        return (
+            not self._lib.CRYPTOGRAPHY_IS_BORINGSSL and not self._fips_enabled
+        )
 
     def dsa_hash_supported(self, algorithm: hashes.HashAlgorithm) -> bool:
         if not self.dsa_supported():
@@ -1075,6 +993,11 @@ class Backend:
             )
 
     def elliptic_curve_supported(self, curve: ec.EllipticCurve) -> bool:
+        if self._fips_enabled and not isinstance(
+            curve, self._fips_ecdh_curves
+        ):
+            return False
+
         try:
             curve_nid = self._elliptic_curve_to_nid(curve)
         except UnsupportedAlgorithm:
@@ -1099,7 +1022,10 @@ class Backend:
         if not isinstance(signature_algorithm, ec.ECDSA):
             return False
 
-        return self.elliptic_curve_supported(curve)
+        return self.elliptic_curve_supported(curve) and (
+            isinstance(signature_algorithm.algorithm, asym_utils.Prehashed)
+            or self.hash_supported(signature_algorithm.algorithm)
+        )
 
     def generate_elliptic_curve_private_key(
         self, curve: ec.EllipticCurve
@@ -1263,11 +1189,6 @@ class Backend:
     def elliptic_curve_exchange_algorithm_supported(
         self, algorithm: ec.ECDH, curve: ec.EllipticCurve
     ) -> bool:
-        if self._fips_enabled and not isinstance(
-            curve, self._fips_ecdh_curves
-        ):
-            return False
-
         return self.elliptic_curve_supported(curve) and isinstance(
             algorithm, ec.ECDH
         )
@@ -1413,8 +1334,6 @@ class Backend:
             if encoding is serialization.Encoding.PEM:
                 if key_type == self._lib.EVP_PKEY_RSA:
                     write_bio = self._lib.PEM_write_bio_RSAPrivateKey
-                elif key_type == self._lib.EVP_PKEY_DSA:
-                    write_bio = self._lib.PEM_write_bio_DSAPrivateKey
                 else:
                     assert key_type == self._lib.EVP_PKEY_EC
                     write_bio = self._lib.PEM_write_bio_ECPrivateKey
@@ -1430,11 +1349,9 @@ class Backend:
                     )
                 if key_type == self._lib.EVP_PKEY_RSA:
                     write_bio = self._lib.i2d_RSAPrivateKey_bio
-                elif key_type == self._lib.EVP_PKEY_EC:
-                    write_bio = self._lib.i2d_ECPrivateKey_bio
                 else:
-                    assert key_type == self._lib.EVP_PKEY_DSA
-                    write_bio = self._lib.i2d_DSAPrivateKey_bio
+                    assert key_type == self._lib.EVP_PKEY_EC
+                    write_bio = self._lib.i2d_ECPrivateKey_bio
                 return self._bio_func_output(write_bio, cdata)
 
             raise ValueError("Unsupported encoding for TraditionalOpenSSL")
@@ -1654,18 +1571,7 @@ class Backend:
         return rust_openssl.ed448.generate_key()
 
     def aead_cipher_supported(self, cipher) -> bool:
-        cipher_name = aead._aead_cipher_name(cipher)
-        if self._fips_enabled and cipher_name not in self._fips_aead:
-            return False
-        # SIV isn't loaded through get_cipherbyname but instead a new fetch API
-        # only available in 3.0+. But if we know we're on 3.0+ then we know
-        # it's supported.
-        if cipher_name.endswith(b"-siv"):
-            return self._lib.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER == 1
-        else:
-            return (
-                self._lib.EVP_get_cipherbyname(cipher_name) != self._ffi.NULL
-            )
+        return aead._aead_cipher_supported(self, cipher)
 
     def _zero_data(self, data, length: int) -> None:
         # We clear things this way because at the moment we're not
@@ -1948,13 +1854,6 @@ class Backend:
         if self._fips_enabled:
             return False
         return self._lib.Cryptography_HAS_POLY1305 == 1
-
-    def create_poly1305_ctx(self, key: bytes) -> _Poly1305Context:
-        utils._check_byteslike("key", key)
-        if len(key) != _POLY1305_KEY_SIZE:
-            raise ValueError("A poly1305 key is 32 bytes long")
-
-        return _Poly1305Context(self, key)
 
     def pkcs7_supported(self) -> bool:
         return not self._lib.CRYPTOGRAPHY_IS_BORINGSSL

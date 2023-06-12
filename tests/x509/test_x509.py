@@ -765,6 +765,23 @@ class TestRSAPSSCertificate:
             cert.signature_hash_algorithm,
         )
 
+    def test_load_pss_cert_no_null(self, backend):
+        """
+        This test verifies that PSS certs where the hash algorithm
+        identifiers have no trailing null still load properly. LibreSSL
+        generates certs like this.
+        """
+        cert = _load_cert(
+            os.path.join("x509", "custom", "rsa_pss_sha256_no_null.pem"),
+            x509.load_pem_x509_certificate,
+        )
+        assert isinstance(cert, x509.Certificate)
+        pss = cert.signature_algorithm_parameters
+        assert isinstance(pss, padding.PSS)
+        assert isinstance(pss._mgf, padding.MGF1)
+        assert isinstance(pss._mgf._algorithm, hashes.SHA256)
+        assert isinstance(cert.signature_hash_algorithm, hashes.SHA256)
+
     def test_load_pss_sha1_mgf1_sha1(self, backend):
         cert = _load_cert(
             os.path.join("x509", "ee-pss-sha1-cert.pem"),
@@ -5181,6 +5198,21 @@ class TestECDSACertificate:
             cert.tbs_certificate_bytes,
             cert.signature_algorithm_parameters,
         )
+
+    def test_load_ecdsa_cert_null_alg_params(self, backend):
+        """
+        This test verifies that we successfully load certificates with encoded
+        null parameters in the signature AlgorithmIdentifier. This is invalid,
+        but Java 11 (up to at least 11.0.19) generates certificates with this
+        encoding so we need to tolerate it at the moment.
+        """
+        with pytest.warns(utils.DeprecatedIn41):
+            cert = _load_cert(
+                os.path.join("x509", "custom", "ecdsa_null_alg.pem"),
+                x509.load_pem_x509_certificate,
+            )
+            assert isinstance(cert.signature_hash_algorithm, hashes.SHA256)
+            assert isinstance(cert.public_key(), ec.EllipticCurvePublicKey)
 
     def test_load_bitstring_dn(self, backend):
         cert = _load_cert(

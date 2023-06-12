@@ -7,7 +7,7 @@
 
 alabaster==0.7.13
     # via sphinx
-argcomplete==3.0.8
+argcomplete==3.1.0
     # via nox
 babel==2.12.1
     # via sphinx
@@ -29,7 +29,7 @@ click==8.1.3
     # via black
 colorlog==6.7.0
     # via nox
-coverage==7.2.5
+coverage==7.2.7
     # via pytest-cov
 distlib==0.3.6
     # via virtualenv
@@ -42,7 +42,7 @@ exceptiongroup==1.1.1
     # via pytest
 execnet==1.9.0
     # via pytest-xdist
-filelock==3.12.0
+filelock==3.12.1
     # via virtualenv
 idna==3.4
     # via requests
@@ -62,7 +62,7 @@ keyring==23.13.1
     # via twine
 markdown-it-py==2.2.0
     # via rich
-markupsafe==2.1.2
+markupsafe==2.1.3
     # via jinja2
 mdurl==0.1.2
     # via markdown-it-py
@@ -89,7 +89,7 @@ pathspec==0.11.1
     #   check-sdist
 pkginfo==1.9.6
     # via twine
-platformdirs==3.5.1
+platformdirs==3.5.3
     # via
     #   black
     #   virtualenv
@@ -110,7 +110,7 @@ pygments==2.15.1
     #   sphinx
 pyproject-hooks==1.0.0
     # via build
-pytest==7.3.1
+pytest==7.3.2
     # via
     #   cryptography (pyproject.toml)
     #   pytest-benchmark
@@ -119,7 +119,7 @@ pytest==7.3.1
     #   pytest-xdist
 pytest-benchmark==4.0.0
     # via cryptography (pyproject.toml)
-pytest-cov==4.0.0
+pytest-cov==4.1.0
     # via cryptography (pyproject.toml)
 pytest-randomly==3.12.0
     # via cryptography (pyproject.toml)
@@ -136,9 +136,9 @@ requests-toolbelt==1.0.0
     # via twine
 rfc3986==2.0.0
     # via twine
-rich==13.3.5
+rich==13.4.1
     # via twine
-ruff==0.0.269
+ruff==0.0.272
     # via cryptography (pyproject.toml)
 six==1.16.0
     # via bleach
@@ -150,7 +150,7 @@ sphinx==6.2.1
     #   sphinx-rtd-theme
     #   sphinxcontrib-jquery
     #   sphinxcontrib-spelling
-sphinx-rtd-theme==1.2.0
+sphinx-rtd-theme==1.2.2
     # via cryptography (pyproject.toml)
 sphinxcontrib-applehelp==1.0.4
     # via sphinx
@@ -179,9 +179,9 @@ tomli==2.0.1
     #   pytest
 twine==4.0.2
     # via cryptography (pyproject.toml)
-typing-extensions==4.5.0
+typing-extensions==4.6.3
     # via mypy
-urllib3==2.0.2
+urllib3==2.0.3
     # via
     #   requests
     #   twine

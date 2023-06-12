@@ -10,6 +10,9 @@ permissions:
 
 env:
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+  CARGO_INCREMENTAL: 0
 
 jobs:
   docs-linkcheck:
@@ -18,15 +21,12 @@ jobs:
     name: "linkcheck"
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3.5.2
+      - uses: actions/checkout@v3.5.3
         with:
           persist-credentials: false
-          fetch-depth: 0
-      - name: set mtimes for rust dirs
-        uses: ./.github/actions/mtime-fix
       - name: Setup python
         id: setup-python
-        uses: actions/setup-python@v4.6.0
+        uses: actions/setup-python@v4.6.1
         with:
           python-version: 3.11
       - name: Cache rust and pip

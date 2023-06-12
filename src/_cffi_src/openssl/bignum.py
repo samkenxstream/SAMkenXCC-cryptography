@@ -39,8 +39,6 @@ BN_MONT_CTX *BN_MONT_CTX_new(void);
 int BN_MONT_CTX_set(BN_MONT_CTX *, const BIGNUM *, BN_CTX *);
 void BN_MONT_CTX_free(BN_MONT_CTX *);
 
-BIGNUM *BN_dup(const BIGNUM *);
-
 int BN_set_word(BIGNUM *, BN_ULONG);
 
 char *BN_bn2hex(const BIGNUM *);
@@ -60,8 +58,6 @@ int BN_mod_exp_mont_consttime(BIGNUM *, const BIGNUM *, const BIGNUM *,
 BIGNUM *BN_mod_inverse(BIGNUM *, const BIGNUM *, const BIGNUM *, BN_CTX *);
 
 int BN_num_bytes(const BIGNUM *);
-
-int BN_mod(BIGNUM *, const BIGNUM *, const BIGNUM *, BN_CTX *);
 
 /* The following 3 prime methods are exposed for Tribler. */
 int BN_generate_prime_ex(BIGNUM *, int, int, const BIGNUM *,

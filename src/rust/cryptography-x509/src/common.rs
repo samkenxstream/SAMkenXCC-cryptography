@@ -22,37 +22,41 @@ impl AlgorithmIdentifier<'_> {
 #[derive(asn1::Asn1DefinedByRead, asn1::Asn1DefinedByWrite, PartialEq, Eq, Hash, Clone, Debug)]
 pub enum AlgorithmParameters<'a> {
     #[defined_by(oid::SHA1_OID)]
-    Sha1(asn1::Null),
+    Sha1(Option<asn1::Null>),
     #[defined_by(oid::SHA224_OID)]
-    Sha224(asn1::Null),
+    Sha224(Option<asn1::Null>),
     #[defined_by(oid::SHA256_OID)]
-    Sha256(asn1::Null),
+    Sha256(Option<asn1::Null>),
     #[defined_by(oid::SHA384_OID)]
-    Sha384(asn1::Null),
+    Sha384(Option<asn1::Null>),
     #[defined_by(oid::SHA512_OID)]
-    Sha512(asn1::Null),
+    Sha512(Option<asn1::Null>),
     #[defined_by(oid::SHA3_224_OID)]
-    Sha3_224(asn1::Null),
+    Sha3_224(Option<asn1::Null>),
     #[defined_by(oid::SHA3_256_OID)]
-    Sha3_256(asn1::Null),
+    Sha3_256(Option<asn1::Null>),
     #[defined_by(oid::SHA3_384_OID)]
-    Sha3_384(asn1::Null),
+    Sha3_384(Option<asn1::Null>),
     #[defined_by(oid::SHA3_512_OID)]
-    Sha3_512(asn1::Null),
+    Sha3_512(Option<asn1::Null>),
 
     #[defined_by(oid::ED25519_OID)]
     Ed25519,
     #[defined_by(oid::ED448_OID)]
     Ed448,
 
+    // These ECDSA algorithms should have no parameters,
+    // but Java 11 (up to at least 11.0.19) encodes them
+    // with NULL parameters. The JDK team is looking to
+    // backport the fix as of June 2023.
     #[defined_by(oid::ECDSA_WITH_SHA224_OID)]
-    EcDsaWithSha224,
+    EcDsaWithSha224(Option<asn1::Null>),
     #[defined_by(oid::ECDSA_WITH_SHA256_OID)]
-    EcDsaWithSha256,
+    EcDsaWithSha256(Option<asn1::Null>),
     #[defined_by(oid::ECDSA_WITH_SHA384_OID)]
-    EcDsaWithSha384,
+    EcDsaWithSha384(Option<asn1::Null>),
     #[defined_by(oid::ECDSA_WITH_SHA512_OID)]
-    EcDsaWithSha512,
+    EcDsaWithSha512(Option<asn1::Null>),
 
     #[defined_by(oid::ECDSA_WITH_SHA3_224_OID)]
     EcDsaWithSha3_224,
@@ -227,7 +231,7 @@ pub struct DHParams<'a> {
 // RSA-PSS ASN.1 default hash algorithm
 pub const PSS_SHA1_HASH_ALG: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
-    params: AlgorithmParameters::Sha1(()),
+    params: AlgorithmParameters::Sha1(Some(())),
 };
 
 // This is defined as an AlgorithmIdentifier in RFC 4055,

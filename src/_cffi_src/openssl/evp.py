@@ -66,7 +66,6 @@ void EVP_PKEY_free(EVP_PKEY *);
 int EVP_PKEY_type(int);
 int EVP_PKEY_size(EVP_PKEY *);
 RSA *EVP_PKEY_get1_RSA(EVP_PKEY *);
-DSA *EVP_PKEY_get1_DSA(EVP_PKEY *);
 
 int EVP_PKEY_encrypt(EVP_PKEY_CTX *, unsigned char *, size_t *,
                      const unsigned char *, size_t);
@@ -81,11 +80,6 @@ int EVP_VerifyInit(EVP_MD_CTX *, const EVP_MD *);
 int EVP_VerifyUpdate(EVP_MD_CTX *, const void *, size_t);
 int EVP_VerifyFinal(EVP_MD_CTX *, const unsigned char *, unsigned int,
                     EVP_PKEY *);
-
-int EVP_DigestSignInit(EVP_MD_CTX *, EVP_PKEY_CTX **, const EVP_MD *,
-                       ENGINE *, EVP_PKEY *);
-int EVP_DigestSignUpdate(EVP_MD_CTX *, const void *, size_t);
-int EVP_DigestSignFinal(EVP_MD_CTX *, unsigned char *, size_t *);
 
 
 EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *, ENGINE *);
@@ -117,9 +111,6 @@ int EVP_PKEY_id(const EVP_PKEY *);
 
 EVP_MD_CTX *EVP_MD_CTX_new(void);
 void EVP_MD_CTX_free(EVP_MD_CTX *);
-
-int EVP_DigestSign(EVP_MD_CTX *, unsigned char *, size_t *,
-                   const unsigned char *, size_t);
 
 int EVP_PKEY_bits(const EVP_PKEY *);
 
