@@ -54,7 +54,7 @@ class DSAPrivateKey(metaclass=abc.ABCMeta):
     def sign(
         self,
         data: bytes,
-        algorithm: typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm],
+        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
     ) -> bytes:
         """
         Signs the data
@@ -117,7 +117,7 @@ class DSAPublicKey(metaclass=abc.ABCMeta):
         self,
         signature: bytes,
         data: bytes,
-        algorithm: typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm],
+        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
     ) -> None:
         """
         Verifies the signature of the data.
@@ -162,11 +162,8 @@ class DSAParameterNumbers:
         return self._g
 
     def parameters(self, backend: typing.Any = None) -> DSAParameters:
-        from cryptography.hazmat.backends.openssl.backend import (
-            backend as ossl,
-        )
-
-        return ossl.load_dsa_parameter_numbers(self)
+        _check_dsa_parameters(self)
+        return rust_openssl.dsa.from_parameter_numbers(self)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DSAParameterNumbers):
@@ -175,10 +172,7 @@ class DSAParameterNumbers:
         return self.p == other.p and self.q == other.q and self.g == other.g
 
     def __repr__(self) -> str:
-        return (
-            "<DSAParameterNumbers(p={self.p}, q={self.q}, "
-            "g={self.g})>".format(self=self)
-        )
+        return f"<DSAParameterNumbers(p={self.p}, q={self.q}, " f"g={self.g})>"
 
 
 class DSAPublicNumbers:
@@ -203,11 +197,8 @@ class DSAPublicNumbers:
         return self._parameter_numbers
 
     def public_key(self, backend: typing.Any = None) -> DSAPublicKey:
-        from cryptography.hazmat.backends.openssl.backend import (
-            backend as ossl,
-        )
-
-        return ossl.load_dsa_public_numbers(self)
+        _check_dsa_parameters(self.parameter_numbers)
+        return rust_openssl.dsa.from_public_numbers(self)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DSAPublicNumbers):
@@ -220,8 +211,8 @@ class DSAPublicNumbers:
 
     def __repr__(self) -> str:
         return (
-            "<DSAPublicNumbers(y={self.y}, "
-            "parameter_numbers={self.parameter_numbers})>".format(self=self)
+            f"<DSAPublicNumbers(y={self.y}, "
+            f"parameter_numbers={self.parameter_numbers})>"
         )
 
 
@@ -246,11 +237,8 @@ class DSAPrivateNumbers:
         return self._public_numbers
 
     def private_key(self, backend: typing.Any = None) -> DSAPrivateKey:
-        from cryptography.hazmat.backends.openssl.backend import (
-            backend as ossl,
-        )
-
-        return ossl.load_dsa_private_numbers(self)
+        _check_dsa_private_numbers(self)
+        return rust_openssl.dsa.from_private_numbers(self)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DSAPrivateNumbers):
@@ -264,17 +252,17 @@ class DSAPrivateNumbers:
 def generate_parameters(
     key_size: int, backend: typing.Any = None
 ) -> DSAParameters:
-    from cryptography.hazmat.backends.openssl.backend import backend as ossl
+    if key_size not in (1024, 2048, 3072, 4096):
+        raise ValueError("Key size must be 1024, 2048, 3072, or 4096 bits.")
 
-    return ossl.generate_dsa_parameters(key_size)
+    return rust_openssl.dsa.generate_parameters(key_size)
 
 
 def generate_private_key(
     key_size: int, backend: typing.Any = None
 ) -> DSAPrivateKey:
-    from cryptography.hazmat.backends.openssl.backend import backend as ossl
-
-    return ossl.generate_dsa_private_key_and_parameters(key_size)
+    parameters = generate_parameters(key_size)
+    return parameters.generate_private_key()
 
 
 def _check_dsa_parameters(parameters: DSAParameterNumbers) -> None:

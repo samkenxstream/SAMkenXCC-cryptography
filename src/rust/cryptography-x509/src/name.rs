@@ -4,9 +4,11 @@
 
 use crate::common;
 
+pub type NameReadable<'a> = asn1::SequenceOf<'a, asn1::SetOf<'a, common::AttributeTypeValue<'a>>>;
+
 pub type Name<'a> = common::Asn1ReadableOrWritable<
     'a,
-    asn1::SequenceOf<'a, asn1::SetOf<'a, common::AttributeTypeValue<'a>>>,
+    NameReadable<'a>,
     asn1::SequenceOfWriter<
         'a,
         asn1::SetOfWriter<'a, common::AttributeTypeValue<'a>, Vec<common::AttributeTypeValue<'a>>>,
@@ -41,7 +43,7 @@ impl<'a> asn1::SimpleAsn1Writable for UnvalidatedIA5String<'a> {
     }
 }
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Hash)]
+#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Eq, Hash)]
 pub struct OtherName<'a> {
     pub type_id: asn1::ObjectIdentifier,
     #[explicit(0, required)]

@@ -2,8 +2,8 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-
 import binascii
+import copy
 import itertools
 import os
 import textwrap
@@ -55,9 +55,7 @@ def _skip_ecdsa_vector(backend, curve_type, hash_type):
 def _skip_curve_unsupported(backend, curve):
     if not backend.elliptic_curve_supported(curve):
         pytest.skip(
-            "Curve {} is not supported by this backend {}".format(
-                curve.name, backend
-            )
+            f"Curve {curve.name} is not supported by this backend {backend}"
         )
 
 
@@ -66,9 +64,7 @@ def _skip_exchange_algorithm_unsupported(backend, algorithm, curve):
         algorithm, curve
     ):
         pytest.skip(
-            "Exchange with {} curve is not supported by {}".format(
-                curve.name, backend
-            )
+            f"Exchange with {curve.name} curve is not supported by {backend}"
         )
 
 
@@ -134,7 +130,12 @@ def test_derive_point_at_infinity(backend):
     _skip_curve_unsupported(backend, curve)
     # order of the curve
     q = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
-    with pytest.raises(ValueError, match="Unable to derive"):
+    # BoringSSL rejects infinity points before it ever gets to us, so it
+    # uses a more generic error message.
+    match = (
+        "infinity" if not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL else "Invalid"
+    )
+    with pytest.raises(ValueError, match=match):
         ec.derive_private_key(q, ec.SECP256R1())
 
 
@@ -615,6 +616,17 @@ class TestECEquality:
         assert key1 != object()
         with pytest.raises(TypeError):
             key1 < key2  # type: ignore[operator]
+
+    def test_public_key_copy(self, backend):
+        _skip_curve_unsupported(backend, ec.SECP256R1())
+        key_bytes = load_vectors_from_file(
+            os.path.join("asymmetric", "PKCS8", "ec_private_key.pem"),
+            lambda pemfile: pemfile.read().encode(),
+        )
+        key1 = serialization.load_pem_private_key(key_bytes, None).public_key()
+        key2 = copy.copy(key1)
+
+        assert key1 == key2
 
 
 class TestECSerialization:

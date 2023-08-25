@@ -97,19 +97,19 @@ pub enum AlgorithmParameters<'a> {
     RsaPss(Option<Box<RsaPssParameters<'a>>>),
 
     #[defined_by(oid::DSA_WITH_SHA224_OID)]
-    DsaWithSha224,
+    DsaWithSha224(Option<asn1::Null>),
     #[defined_by(oid::DSA_WITH_SHA256_OID)]
-    DsaWithSha256,
+    DsaWithSha256(Option<asn1::Null>),
     #[defined_by(oid::DSA_WITH_SHA384_OID)]
-    DsaWithSha384,
+    DsaWithSha384(Option<asn1::Null>),
     #[defined_by(oid::DSA_WITH_SHA512_OID)]
-    DsaWithSha512,
+    DsaWithSha512(Option<asn1::Null>),
 
     #[default]
     Other(asn1::ObjectIdentifier, Option<asn1::Tlv<'a>>),
 }
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Clone)]
+#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Eq, Clone)]
 pub struct SubjectPublicKeyInfo<'a> {
     pub algorithm: AlgorithmIdentifier<'a>,
     pub subject_public_key: asn1::BitString<'a>,
@@ -157,7 +157,7 @@ impl<'a> asn1::Asn1Writable for RawTlv<'a> {
     }
 }
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Hash, Clone)]
+#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Eq, Hash, Clone)]
 pub enum Time {
     UtcTime(asn1::UtcTime),
     GeneralizedTime(asn1::GeneralizedTime),
@@ -172,7 +172,7 @@ impl Time {
     }
 }
 
-#[derive(Hash, PartialEq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub enum Asn1ReadableOrWritable<'a, T, U> {
     Read(T, PhantomData<&'a ()>),
     Write(U, PhantomData<&'a ()>),
@@ -234,6 +234,22 @@ pub const PSS_SHA1_HASH_ALG: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     params: AlgorithmParameters::Sha1(Some(())),
 };
 
+// RSA-PSS ASN.1 hash algorithm definitions specified under the CA/B Forum BRs.
+pub const PSS_SHA256_HASH_ALG: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Sha256(Some(())),
+};
+
+pub const PSS_SHA384_HASH_ALG: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Sha384(Some(())),
+};
+
+pub const PSS_SHA512_HASH_ALG: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Sha512(Some(())),
+};
+
 // This is defined as an AlgorithmIdentifier in RFC 4055,
 // but the mask generation algorithm **must** contain an AlgorithmIdentifier
 // in its params, so we define it this way.
@@ -247,6 +263,22 @@ pub struct MaskGenAlgorithm<'a> {
 pub const PSS_SHA1_MASK_GEN_ALG: MaskGenAlgorithm<'_> = MaskGenAlgorithm {
     oid: oid::MGF1_OID,
     params: PSS_SHA1_HASH_ALG,
+};
+
+// RSA-PSS ASN.1 mask gen algorithms defined under the CA/B Forum BRs.
+pub const PSS_SHA256_MASK_GEN_ALG: MaskGenAlgorithm<'_> = MaskGenAlgorithm {
+    oid: oid::MGF1_OID,
+    params: PSS_SHA256_HASH_ALG,
+};
+
+pub const PSS_SHA384_MASK_GEN_ALG: MaskGenAlgorithm<'_> = MaskGenAlgorithm {
+    oid: oid::MGF1_OID,
+    params: PSS_SHA384_HASH_ALG,
+};
+
+pub const PSS_SHA512_MASK_GEN_ALG: MaskGenAlgorithm<'_> = MaskGenAlgorithm {
+    oid: oid::MGF1_OID,
+    params: PSS_SHA512_HASH_ALG,
 };
 
 // From RFC 4055 section 3.1:

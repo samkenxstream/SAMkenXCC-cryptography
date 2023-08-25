@@ -8,6 +8,31 @@ Changelog
 
 .. note:: This version is not yet released and is under active development.
 
+* Parsing SSH certificates no longer permits malformed critical options with
+  values, as documented in the 41.0.2 release notes.
+* Updated the minimum supported Rust version (MSRV) to 1.63.0, from 1.56.0.
+
+.. _v41-0-3:
+
+41.0.3 - 2023-08-01
+~~~~~~~~~~~~~~~~~~~
+
+* Fixed performance regression loading DH public keys.
+* Fixed a memory leak when using
+  :class:`~cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305`.
+* Updated Windows, macOS, and Linux wheels to be compiled with OpenSSL 3.1.2.
+
+.. _v41-0-2:
+
+41.0.2 - 2023-07-10
+~~~~~~~~~~~~~~~~~~~
+
+* Fixed bugs in creating and parsing SSH certificates where critical options
+  with values were handled incorrectly. Certificates are now created correctly
+  and parsing accepts correct values as well as the previously generated
+  invalid forms with a warning. In the next release, support for parsing these
+  invalid forms will be removed.
+
 .. _v41-0-1:
 
 41.0.1 - 2023-06-01

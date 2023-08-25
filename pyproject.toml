@@ -1,11 +1,12 @@
 [build-system]
+# These requirements must be kept sync with the requirements on ./github/requirements/build-requirements files
 requires = [
     # First version of setuptools to support pyproject.toml configuration
     "setuptools>=61.0.0",
     "wheel",
     # Must be kept in sync with `project.dependencies`
     "cffi>=1.12; platform_python_implementation != 'PyPy'",
-    "setuptools-rust>=0.11.4",
+    "setuptools-rust>=1.7.0",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -80,6 +81,13 @@ docstest =  ["pyenchant >=1.6.11", "twine >=1.12.0", "sphinxcontrib-spelling >=4
 sdist = ["build"]
 pep8test = ["black", "ruff", "mypy", "check-sdist"]
 
+[[tool.setuptools-rust.ext-modules]]
+target = "cryptography.hazmat.bindings._rust"
+path = "src/rust/Cargo.toml"
+py-limited-api = true
+rust-version = ">=1.63.0"
+
+
 [tool.black]
 line-length = 79
 target-version = ["py37"]
@@ -135,10 +143,8 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-# UP006: Minimum Python 3.9
-# UP007, UP038: Minimum Python 3.10
-ignore = ['N818', 'UP006', 'UP007', 'UP038']
-select = ['E', 'F', 'I', 'N', 'W', 'UP']
+ignore = ['N818']
+select = ['E', 'F', 'I', 'N', 'W', 'UP', 'RUF']
 line-length = 79
 
 [tool.ruff.isort]

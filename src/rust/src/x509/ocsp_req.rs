@@ -45,15 +45,15 @@ fn load_der_ocsp_request(
 
     Ok(OCSPRequest {
         raw,
-        cached_extensions: None,
+        cached_extensions: pyo3::once_cell::GILOnceCell::new(),
     })
 }
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.ocsp")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.ocsp")]
 struct OCSPRequest {
     raw: OwnedOCSPRequest,
 
-    cached_extensions: Option<pyo3::PyObject>,
+    cached_extensions: pyo3::once_cell::GILOnceCell<pyo3::PyObject>,
 }
 
 impl OCSPRequest {
@@ -111,16 +111,16 @@ impl OCSPRequest {
     }
 
     #[getter]
-    fn extensions(&mut self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn extensions(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         let tbs_request = &self.raw.borrow_dependent().tbs_request;
 
         let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
         x509::parse_and_cache_extensions(
             py,
-            &mut self.cached_extensions,
+            &self.cached_extensions,
             &tbs_request.raw_request_extensions,
-            |oid, value| {
-                match *oid {
+            |ext| {
+                match ext.extn_id {
                     oid::NONCE_OID => {
                         // This is a disaster. RFC 2560 says that the contents of the nonce is
                         // just the raw extension value. This is nonsense, since they're always
@@ -128,15 +128,13 @@ impl OCSPRequest {
                         // nonce is an OCTET STRING, and so you should unwrap the TLV to get
                         // the nonce. So we try parsing as a TLV and fall back to just using
                         // the raw value.
-                        let nonce = asn1::parse_single::<&[u8]>(value).unwrap_or(value);
+                        let nonce = ext.value::<&[u8]>().unwrap_or(ext.extn_value);
                         Ok(Some(
                             x509_module.call_method1(pyo3::intern!(py, "OCSPNonce"), (nonce,))?,
                         ))
                     }
                     oid::ACCEPTABLE_RESPONSES_OID => {
-                        let oids = asn1::parse_single::<
-                            asn1::SequenceOf<'_, asn1::ObjectIdentifier>,
-                        >(value)?;
+                        let oids = ext.value::<asn1::SequenceOf<'_, asn1::ObjectIdentifier>>()?;
                         let py_oids = pyo3::types::PyList::empty(py);
                         for oid in oids {
                             py_oids.append(oid_to_py_oid(py, &oid)?)?;

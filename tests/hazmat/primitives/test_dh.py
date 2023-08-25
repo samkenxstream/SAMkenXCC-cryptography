@@ -4,6 +4,7 @@
 
 
 import binascii
+import copy
 import itertools
 import os
 import typing
@@ -224,7 +225,7 @@ class TestDH:
             g = int(vector["g"], 16)
             q: typing.Optional[int] = int(vector["q"], 16)
         else:
-            parameters = backend.generate_dh_private_key_and_parameters(2, 512)
+            parameters = dh.generate_parameters(2, 512).generate_private_key()
 
             private = parameters.private_numbers()
 
@@ -488,6 +489,21 @@ class TestDH:
 
         with pytest.raises(TypeError):
             key1 < key2  # type: ignore[operator]
+
+    @pytest.mark.supported(
+        only_if=lambda backend: backend.dh_x942_serialization_supported(),
+        skip_message="DH X9.42 not supported",
+    )
+    def test_public_key_copy(self):
+        key_bytes = load_vectors_from_file(
+            os.path.join("asymmetric", "DH", "dhpub.pem"),
+            lambda pemfile: pemfile.read(),
+            mode="rb",
+        )
+        key1 = serialization.load_pem_public_key(key_bytes)
+        key2 = copy.copy(key1)
+
+        assert key1 == key2
 
 
 @pytest.mark.supported(
@@ -932,9 +948,7 @@ class TestDHParameterSerialization:
                 serialization.PublicFormat.SubjectPublicKeyInfo,
             ),
             (serialization.Encoding.Raw, serialization.PublicFormat.PKCS1),
-        ]
-        + list(
-            itertools.product(
+            *itertools.product(
                 [
                     serialization.Encoding.Raw,
                     serialization.Encoding.X962,
@@ -946,8 +960,8 @@ class TestDHParameterSerialization:
                     serialization.PublicFormat.UncompressedPoint,
                     serialization.PublicFormat.CompressedPoint,
                 ],
-            )
-        ),
+            ),
+        ],
     )
     def test_public_bytes_rejects_invalid(self, encoding, fmt, backend):
         parameters = FFDH3072_P.parameters(backend)

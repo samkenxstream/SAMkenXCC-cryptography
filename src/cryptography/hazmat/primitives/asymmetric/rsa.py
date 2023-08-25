@@ -8,6 +8,7 @@ import abc
 import typing
 from math import gcd
 
+from cryptography.hazmat.bindings._rust import openssl as rust_openssl
 from cryptography.hazmat.primitives import _serialization, hashes
 from cryptography.hazmat.primitives._asymmetric import AsymmetricPadding
 from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
@@ -38,7 +39,7 @@ class RSAPrivateKey(metaclass=abc.ABCMeta):
         self,
         data: bytes,
         padding: AsymmetricPadding,
-        algorithm: typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm],
+        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
     ) -> bytes:
         """
         Signs the data.
@@ -63,6 +64,7 @@ class RSAPrivateKey(metaclass=abc.ABCMeta):
 
 
 RSAPrivateKeyWithSerialization = RSAPrivateKey
+RSAPrivateKey.register(rust_openssl.rsa.RSAPrivateKey)
 
 
 class RSAPublicKey(metaclass=abc.ABCMeta):
@@ -101,7 +103,7 @@ class RSAPublicKey(metaclass=abc.ABCMeta):
         signature: bytes,
         data: bytes,
         padding: AsymmetricPadding,
-        algorithm: typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm],
+        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
     ) -> None:
         """
         Verifies the signature of the data.
@@ -112,7 +114,7 @@ class RSAPublicKey(metaclass=abc.ABCMeta):
         self,
         signature: bytes,
         padding: AsymmetricPadding,
-        algorithm: typing.Optional[hashes.HashAlgorithm],
+        algorithm: hashes.HashAlgorithm | None,
     ) -> bytes:
         """
         Recovers the original data from the signature.
@@ -126,6 +128,7 @@ class RSAPublicKey(metaclass=abc.ABCMeta):
 
 
 RSAPublicKeyWithSerialization = RSAPublicKey
+RSAPublicKey.register(rust_openssl.rsa.RSAPublicKey)
 
 
 def generate_private_key(
@@ -250,9 +253,7 @@ def rsa_crt_dmq1(private_exponent: int, q: int) -> int:
 _MAX_RECOVERY_ATTEMPTS = 1000
 
 
-def rsa_recover_prime_factors(
-    n: int, e: int, d: int
-) -> typing.Tuple[int, int]:
+def rsa_recover_prime_factors(n: int, e: int, d: int) -> tuple[int, int]:
     """
     Compute factors p and q from the private exponent d. We assume that n has
     no more than two factors. This function is adapted from code in PyCrypto.
@@ -427,7 +428,7 @@ class RSAPublicNumbers:
         return ossl.load_rsa_public_numbers(self)
 
     def __repr__(self) -> str:
-        return "<RSAPublicNumbers(e={0.e}, n={0.n})>".format(self)
+        return f"<RSAPublicNumbers(e={self.e}, n={self.n})>"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, RSAPublicNumbers):

@@ -7,12 +7,12 @@ use crate::buf::CffiBuf;
 use crate::error::CryptographyResult;
 use foreign_types_shared::ForeignTypeRef;
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.x25519")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.openssl.x25519")]
 struct X25519PrivateKey {
     pkey: openssl::pkey::PKey<openssl::pkey::Private>,
 }
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.x25519")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.openssl.x25519")]
 struct X25519PublicKey {
     pkey: openssl::pkey::PKey<openssl::pkey::Public>,
 }
@@ -148,6 +148,10 @@ impl X25519PublicKey {
             pyo3::basic::CompareOp::Ne => Ok(!self.pkey.public_eq(&other.pkey)),
             _ => Err(pyo3::exceptions::PyTypeError::new_err("Cannot be ordered")),
         }
+    }
+
+    fn __copy__(slf: pyo3::PyRef<'_, Self>) -> pyo3::PyRef<'_, Self> {
+        slf
     }
 }
 

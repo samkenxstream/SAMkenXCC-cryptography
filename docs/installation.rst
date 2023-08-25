@@ -13,20 +13,18 @@ single most common cause of installation problems.
 Supported platforms
 -------------------
 
-Currently we test ``cryptography`` on Python 3.7+ and PyPy3 7.3.10+ on these
+Currently we test ``cryptography`` on Python 3.7+ and PyPy3 7.3.11+ on these
 operating systems.
 
 * x86-64 RHEL 8.x
 * x86-64 CentOS 9 Stream
 * x86-64 Fedora (latest)
-* x86-64 macOS 12 Monterey
-* ARM64 macOS 13 Ventura
+* x86-64 and ARM64 macOS 13 Ventura
 * x86-64 Ubuntu 20.04, 22.04, rolling
 * ARM64 Ubuntu 22.04
 * x86-64 Debian Buster (10.x), Bullseye (11.x), Bookworm (12.x),
   Trixie (13.x), and Sid (unstable)
-* x86-64 Alpine (latest)
-* ARM64 Alpine (latest)
+* x86-64 and ARM64 Alpine (latest)
 * 32-bit and 64-bit Python on 64-bit Windows Server 2022
 
 We test compiling with ``clang`` as well as ``gcc`` and use the following
@@ -105,7 +103,7 @@ Alpine
 
 .. warning::
 
-    The Rust available by default in Alpine < 3.15 is older than the minimum
+    The Rust available by default in Alpine < 3.17 is older than the minimum
     supported version. See the :ref:`Rust installation instructions
     <installation:Rust>` for information about installing a newer Rust.
 
@@ -134,8 +132,8 @@ Fedora/RHEL/CentOS
 
 .. warning::
 
-    For RHEL and CentOS you must be on version 8.6 or newer for the command
-    below to install a sufficiently new Rust. If your Rust is less than 1.56.0
+    For RHEL and CentOS you must be on version 8.8 or newer for the command
+    below to install a sufficiently new Rust. If your Rust is less than 1.63.0
     please see the :ref:`Rust installation instructions <installation:Rust>`
     for information about installing a newer Rust.
 
@@ -313,7 +311,7 @@ Rust
     a Rust toolchain.
 
 Building ``cryptography`` requires having a working Rust toolchain. The current
-minimum supported Rust version is 1.56.0. **This is newer than the Rust some
+minimum supported Rust version is 1.63.0. **This is newer than the Rust some
 package managers ship**, so users may need to install with the
 instructions below.
 

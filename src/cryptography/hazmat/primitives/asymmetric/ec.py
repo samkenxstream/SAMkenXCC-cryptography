@@ -9,6 +9,7 @@ import typing
 
 from cryptography import utils
 from cryptography.hazmat._oid import ObjectIdentifier
+from cryptography.hazmat.bindings._rust import openssl as rust_openssl
 from cryptography.hazmat.primitives import _serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
 
@@ -56,7 +57,7 @@ class EllipticCurveSignatureAlgorithm(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def algorithm(
         self,
-    ) -> typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm]:
+    ) -> asym_utils.Prehashed | hashes.HashAlgorithm:
         """
         The digest algorithm used with this signature.
         """
@@ -121,6 +122,7 @@ class EllipticCurvePrivateKey(metaclass=abc.ABCMeta):
 
 
 EllipticCurvePrivateKeyWithSerialization = EllipticCurvePrivateKey
+EllipticCurvePrivateKey.register(rust_openssl.ec.ECPrivateKey)
 
 
 class EllipticCurvePublicKey(metaclass=abc.ABCMeta):
@@ -192,6 +194,7 @@ class EllipticCurvePublicKey(metaclass=abc.ABCMeta):
 
 
 EllipticCurvePublicKeyWithSerialization = EllipticCurvePublicKey
+EllipticCurvePublicKey.register(rust_openssl.ec.ECPublicKey)
 
 
 class SECT571R1(EllipticCurve):
@@ -289,7 +292,7 @@ class BrainpoolP512R1(EllipticCurve):
     key_size = 512
 
 
-_CURVE_TYPES: typing.Dict[str, typing.Type[EllipticCurve]] = {
+_CURVE_TYPES: dict[str, type[EllipticCurve]] = {
     "prime192v1": SECP192R1,
     "prime256v1": SECP256R1,
     "secp192r1": SECP192R1,
@@ -317,14 +320,14 @@ _CURVE_TYPES: typing.Dict[str, typing.Type[EllipticCurve]] = {
 class ECDSA(EllipticCurveSignatureAlgorithm):
     def __init__(
         self,
-        algorithm: typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm],
+        algorithm: asym_utils.Prehashed | hashes.HashAlgorithm,
     ):
         self._algorithm = algorithm
 
     @property
     def algorithm(
         self,
-    ) -> typing.Union[asym_utils.Prehashed, hashes.HashAlgorithm]:
+    ) -> asym_utils.Prehashed | hashes.HashAlgorithm:
         return self._algorithm
 
 
@@ -480,7 +483,7 @@ _OID_TO_CURVE = {
 }
 
 
-def get_curve_for_oid(oid: ObjectIdentifier) -> typing.Type[EllipticCurve]:
+def get_curve_for_oid(oid: ObjectIdentifier) -> type[EllipticCurve]:
     try:
         return _OID_TO_CURVE[oid]
     except KeyError:

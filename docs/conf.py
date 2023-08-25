@@ -2,7 +2,6 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-#
 # Cryptography documentation build configuration file, created by
 # sphinx-quickstart on Tue Aug  6 19:19:14 2013.
 #
@@ -202,6 +201,9 @@ linkcheck_ignore = [
     r"https://www.oscca.gov.cn",
     # Cloudflare returns 403s for all non-browser requests
     r"https://speakerdeck.com",
+    # GitHub changed how they do page renders so anchor detection
+    # no longer works in source view
+    r"https://github.com/.*/blob/.*#L\d+",
 ]
 
 autosectionlabel_prefix_document = True

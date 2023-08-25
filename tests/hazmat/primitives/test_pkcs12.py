@@ -4,7 +4,7 @@
 
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -40,9 +40,7 @@ from ...utils import load_vectors_from_file
 def _skip_curve_unsupported(backend, curve):
     if not backend.elliptic_curve_supported(curve):
         pytest.skip(
-            "Curve {} is not supported by this backend {}".format(
-                curve.name, backend
-            )
+            f"Curve {curve.name} is not supported by this backend {backend}"
         )
 
 
@@ -356,7 +354,7 @@ class TestPKCS12Creation:
 
         assert isinstance(key, ktype)
         cacert, cakey = _load_ca(backend)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         cert = (
             x509.CertificateBuilder()
             .subject_name(cacert.subject)
@@ -600,7 +598,7 @@ class TestPKCS12Creation:
         encryption = builder.build(b"password")
         key = ec.generate_private_key(ec.SECP256R1())
         cacert, cakey = _load_ca(backend)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         cert = (
             x509.CertificateBuilder()
             .subject_name(cacert.subject)
@@ -701,7 +699,7 @@ def test_pkcs12_ordering():
                 x509.NameAttribute(x509.NameOID.COMMON_NAME, name),
             ]
         )
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         cert = (
             x509.CertificateBuilder()
             .subject_name(subject)
@@ -796,11 +794,11 @@ class TestPKCS12Objects:
         cert = _load_cert(backend, os.path.join("x509", "cryptography.io.pem"))
         assert (
             repr(PKCS12Certificate(cert, None))
-            == f"<PKCS12Certificate({repr(cert)}, friendly_name=None)>"
+            == f"<PKCS12Certificate({cert!r}, friendly_name=None)>"
         )
         assert (
             repr(PKCS12Certificate(cert, b"a"))
-            == f"<PKCS12Certificate({repr(cert)}, friendly_name=b'a')>"
+            == f"<PKCS12Certificate({cert!r}, friendly_name=b'a')>"
         )
 
     def test_key_and_certificates_constructor(self, backend):

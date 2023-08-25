@@ -11,17 +11,17 @@ use foreign_types_shared::ForeignTypeRef;
 
 const MIN_MODULUS_SIZE: u32 = 512;
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.dh")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.openssl.dh")]
 struct DHPrivateKey {
     pkey: openssl::pkey::PKey<openssl::pkey::Private>,
 }
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.dh")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.openssl.dh")]
 struct DHPublicKey {
     pkey: openssl::pkey::PKey<openssl::pkey::Public>,
 }
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.openssl.dh")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.openssl.dh")]
 struct DHParameters {
     dh: openssl::dh::Dh<openssl::pkey::Params>,
 }
@@ -83,11 +83,11 @@ fn from_der_parameters(data: &[u8]) -> CryptographyResult<DHParameters> {
 fn from_pem_parameters(data: &[u8]) -> CryptographyResult<DHParameters> {
     let parsed = x509::find_in_pem(
         data,
-        |p| p.tag == "DH PARAMETERS" || p.tag == "X9.42 DH PARAMETERS",
+        |p| p.tag() == "DH PARAMETERS" || p.tag() == "X9.42 DH PARAMETERS",
         "Valid PEM but no BEGIN DH PARAMETERS/END DH PARAMETERS delimiters. Are you sure this is a DH parameters?",
     )?;
 
-    from_der_parameters(&parsed.contents)
+    from_der_parameters(parsed.contents())
 }
 
 fn dh_parameters_from_numbers(
@@ -102,18 +102,10 @@ fn dh_parameters_from_numbers(
         .transpose()?;
     let g = utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "g"))?)?;
 
-    let dh = openssl::dh::Dh::from_pqg(p, q, g)?;
-    if !dh.check_key()? {
-        return Err(CryptographyError::from(
-            pyo3::exceptions::PyValueError::new_err(
-                "DH private numbers did not pass safety checks.",
-            ),
-        ));
-    }
-
-    Ok(dh)
+    Ok(openssl::dh::Dh::from_pqg(p, q, g)?)
 }
 
+#[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
 #[pyo3::prelude::pyfunction]
 fn from_private_numbers(
     py: pyo3::Python<'_>,
@@ -127,10 +119,20 @@ fn from_private_numbers(
     let pub_key = utils::py_int_to_bn(py, public_numbers.getattr(pyo3::intern!(py, "y"))?)?;
     let priv_key = utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "x"))?)?;
 
-    let pkey = openssl::pkey::PKey::from_dh(dh.set_key(pub_key, priv_key)?)?;
+    let dh = dh.set_key(pub_key, priv_key)?;
+    if !dh.check_key()? {
+        return Err(CryptographyError::from(
+            pyo3::exceptions::PyValueError::new_err(
+                "DH private numbers did not pass safety checks.",
+            ),
+        ));
+    }
+
+    let pkey = openssl::pkey::PKey::from_dh(dh)?;
     Ok(DHPrivateKey { pkey })
 }
 
+#[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
 #[pyo3::prelude::pyfunction]
 fn from_public_numbers(
     py: pyo3::Python<'_>,
@@ -226,6 +228,7 @@ impl DHPrivateKey {
         )?)
     }
 
+    #[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
     fn public_key(&self) -> CryptographyResult<DHPublicKey> {
         let orig_dh = self.pkey.dh().unwrap();
         let dh = clone_dh(&orig_dh)?;
@@ -349,10 +352,15 @@ impl DHPublicKey {
             _ => Err(pyo3::exceptions::PyTypeError::new_err("Cannot be ordered")),
         }
     }
+
+    fn __copy__(slf: pyo3::PyRef<'_, Self>) -> pyo3::PyRef<'_, Self> {
+        slf
+    }
 }
 
 #[pyo3::prelude::pymethods]
 impl DHParameters {
+    #[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
     fn generate_private_key(&self) -> CryptographyResult<DHPrivateKey> {
         let dh = clone_dh(&self.dh)?.generate_key()?;
         Ok(DHPrivateKey {
@@ -424,7 +432,9 @@ pub(crate) fn create_module(py: pyo3::Python<'_>) -> pyo3::PyResult<&pyo3::prelu
     m.add_function(pyo3::wrap_pyfunction!(public_key_from_ptr, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(from_der_parameters, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(from_pem_parameters, m)?)?;
+    #[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
     m.add_function(pyo3::wrap_pyfunction!(from_private_numbers, m)?)?;
+    #[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
     m.add_function(pyo3::wrap_pyfunction!(from_public_numbers, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(from_parameter_numbers, m)?)?;
 

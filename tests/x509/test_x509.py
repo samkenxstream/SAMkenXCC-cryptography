@@ -1054,7 +1054,7 @@ class TestRSACertificate:
 
         with pytest.raises(
             ValueError,
-            match="Could not find any extensions in TBS certificate",
+            match="Could not find pre-certificate SCT list extension",
         ):
             cert.tbs_precertificate_bytes
 
@@ -4982,6 +4982,21 @@ class TestDSACertificate:
             "822ff5d234e073b901cf5941f58e1f538e71d40d", 16
         )
 
+    def test_load_dsa_cert_null_alg_params(self, backend):
+        """
+        This test verifies that we successfully load certificates with encoded
+        null parameters in the signature AlgorithmIdentifier. This is invalid,
+        but all versions of Java less than 21 generate certificates with this
+        encoding so we need to tolerate it at the moment.
+        """
+        with pytest.warns(utils.DeprecatedIn41):
+            cert = _load_cert(
+                os.path.join("x509", "custom", "dsa_null_alg_params.pem"),
+                x509.load_pem_x509_certificate,
+            )
+            assert isinstance(cert.signature_hash_algorithm, hashes.SHA256)
+            assert isinstance(cert.public_key(), dsa.DSAPublicKey)
+
     def test_signature(self, backend):
         cert = _load_cert(
             os.path.join("x509", "custom", "dsa_selfsigned_ca.pem"),
@@ -5437,7 +5452,9 @@ class TestOtherCertificate:
 
 
 class TestNameAttribute:
-    EXPECTED_TYPES = [
+    EXPECTED_TYPES: typing.ClassVar[
+        typing.List[typing.Tuple[x509.ObjectIdentifier, _ASN1Type]]
+    ] = [
         (NameOID.COMMON_NAME, _ASN1Type.UTF8String),
         (NameOID.COUNTRY_NAME, _ASN1Type.PrintableString),
         (NameOID.LOCALITY_NAME, _ASN1Type.UTF8String),
@@ -6073,7 +6090,9 @@ class TestSignatureRejection:
 
     def test_crl_signing_check(self, backend):
         private_key = self.load_key(backend)
-        last_time = datetime.datetime.utcnow().replace(microsecond=0)
+        last_time = (
+            datetime.datetime.now().replace(tzinfo=None).replace(microsecond=0)
+        )
         next_time = last_time
         builder = (
             x509.CertificateRevocationListBuilder()

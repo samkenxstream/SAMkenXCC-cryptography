@@ -5,9 +5,11 @@
 use crate::asn1::{
     big_byte_slice_to_py_int, encode_der_data, oid_to_py_oid, py_uint_to_big_endian_bytes,
 };
+use crate::backend::hashes::Hash;
 use crate::error::{CryptographyError, CryptographyResult};
 use crate::x509::{certificate, extensions, sign};
 use crate::{exceptions, x509};
+use cryptography_x509::extensions::{Extension, IssuerAlternativeName};
 use cryptography_x509::{
     common,
     crl::{
@@ -41,7 +43,7 @@ fn load_der_x509_crl(
     Ok(CertificateRevocationList {
         owned: Arc::new(owned),
         revoked_certs: pyo3::once_cell::GILOnceCell::new(),
-        cached_extensions: None,
+        cached_extensions: pyo3::once_cell::GILOnceCell::new(),
     })
 }
 
@@ -52,12 +54,12 @@ fn load_pem_x509_crl(
 ) -> Result<CertificateRevocationList, CryptographyError> {
     let block = x509::find_in_pem(
         data,
-        |p| p.tag == "X509 CRL",
+        |p| p.tag() == "X509 CRL",
         "Valid PEM but no BEGIN X509 CRL/END X509 delimiters. Are you sure this is a CRL?",
     )?;
     load_der_x509_crl(
         py,
-        pyo3::types::PyBytes::new(py, &block.contents).into_py(py),
+        pyo3::types::PyBytes::new(py, block.contents()).into_py(py),
     )
 }
 
@@ -69,12 +71,12 @@ self_cell::self_cell!(
     }
 );
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.x509")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.x509")]
 struct CertificateRevocationList {
     owned: Arc<OwnedCertificateRevocationList>,
 
     revoked_certs: pyo3::once_cell::GILOnceCell<Vec<OwnedRevokedCertificate>>,
-    cached_extensions: Option<pyo3::PyObject>,
+    cached_extensions: pyo3::once_cell::GILOnceCell<pyo3::PyObject>,
 }
 
 impl CertificateRevocationList {
@@ -85,7 +87,7 @@ impl CertificateRevocationList {
     fn revoked_cert(&self, py: pyo3::Python<'_>, idx: usize) -> RevokedCertificate {
         RevokedCertificate {
             owned: self.revoked_certs.get(py).unwrap()[idx].clone(),
-            cached_extensions: None,
+            cached_extensions: pyo3::once_cell::GILOnceCell::new(),
         }
     }
 
@@ -177,16 +179,13 @@ impl CertificateRevocationList {
     fn fingerprint<'p>(
         &self,
         py: pyo3::Python<'p>,
-        algorithm: pyo3::PyObject,
+        algorithm: &pyo3::PyAny,
     ) -> pyo3::PyResult<&'p pyo3::PyAny> {
-        let hashes_mod = py.import(pyo3::intern!(py, "cryptography.hazmat.primitives.hashes"))?;
-        let h = hashes_mod
-            .getattr(pyo3::intern!(py, "Hash"))?
-            .call1((algorithm,))?;
-
         let data = self.public_bytes_der()?;
-        h.call_method1(pyo3::intern!(py, "update"), (data.as_slice(),))?;
-        h.call_method0(pyo3::intern!(py, "finalize"))
+
+        let mut h = Hash::new(py, algorithm, None)?;
+        h.update_bytes(&data)?;
+        Ok(h.finalize(py)?)
     }
 
     #[getter]
@@ -241,7 +240,11 @@ impl CertificateRevocationList {
     fn issuer<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
         Ok(x509::parse_name(
             py,
-            &self.owned.borrow_dependent().tbs_cert_list.issuer,
+            self.owned
+                .borrow_dependent()
+                .tbs_cert_list
+                .issuer
+                .unwrap_read(),
         )?)
     }
 
@@ -266,17 +269,17 @@ impl CertificateRevocationList {
     }
 
     #[getter]
-    fn extensions(&mut self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn extensions(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         let tbs_cert_list = &self.owned.borrow_dependent().tbs_cert_list;
 
         let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
         x509::parse_and_cache_extensions(
             py,
-            &mut self.cached_extensions,
+            &self.cached_extensions,
             &tbs_cert_list.raw_crl_extensions,
-            |oid, ext_data| match *oid {
+            |ext| match ext.extn_id {
                 oid::CRL_NUMBER_OID => {
-                    let bignum = asn1::parse_single::<asn1::BigUint<'_>>(ext_data)?;
+                    let bignum = ext.value::<asn1::BigUint<'_>>()?;
                     let pynum = big_byte_slice_to_py_int(py, bignum.as_bytes())?;
                     Ok(Some(
                         x509_module
@@ -285,7 +288,7 @@ impl CertificateRevocationList {
                     ))
                 }
                 oid::DELTA_CRL_INDICATOR_OID => {
-                    let bignum = asn1::parse_single::<asn1::BigUint<'_>>(ext_data)?;
+                    let bignum = ext.value::<asn1::BigUint<'_>>()?;
                     let pynum = big_byte_slice_to_py_int(py, bignum.as_bytes())?;
                     Ok(Some(
                         x509_module
@@ -294,9 +297,7 @@ impl CertificateRevocationList {
                     ))
                 }
                 oid::ISSUER_ALTERNATIVE_NAME_OID => {
-                    let gn_seq = asn1::parse_single::<asn1::SequenceOf<'_, name::GeneralName<'_>>>(
-                        ext_data,
-                    )?;
+                    let gn_seq = ext.value::<IssuerAlternativeName<'_>>()?;
                     let ians = x509::parse_general_names(py, &gn_seq)?;
                     Ok(Some(
                         x509_module
@@ -305,18 +306,18 @@ impl CertificateRevocationList {
                     ))
                 }
                 oid::AUTHORITY_INFORMATION_ACCESS_OID => {
-                    let ads = certificate::parse_access_descriptions(py, ext_data)?;
+                    let ads = certificate::parse_access_descriptions(py, ext)?;
                     Ok(Some(
                         x509_module
                             .getattr(pyo3::intern!(py, "AuthorityInformationAccess"))?
                             .call1((ads,))?,
                     ))
                 }
-                oid::AUTHORITY_KEY_IDENTIFIER_OID => Ok(Some(
-                    certificate::parse_authority_key_identifier(py, ext_data)?,
-                )),
+                oid::AUTHORITY_KEY_IDENTIFIER_OID => {
+                    Ok(Some(certificate::parse_authority_key_identifier(py, ext)?))
+                }
                 oid::ISSUING_DISTRIBUTION_POINT_OID => {
-                    let idp = asn1::parse_single::<crl::IssuingDistributionPoint<'_>>(ext_data)?;
+                    let idp = ext.value::<crl::IssuingDistributionPoint<'_>>()?;
                     let (full_name, relative_name) = match idp.distribution_point {
                         Some(data) => certificate::parse_distribution_point_name(py, data)?,
                         None => (py.None(), py.None()),
@@ -344,7 +345,7 @@ impl CertificateRevocationList {
                     ))
                 }
                 oid::FRESHEST_CRL_OID => {
-                    let dp = certificate::parse_distribution_points(py, ext_data)?;
+                    let dp = certificate::parse_distribution_points(py, ext)?;
                     Ok(Some(
                         x509_module
                             .getattr(pyo3::intern!(py, "FreshestCRL"))?
@@ -357,7 +358,7 @@ impl CertificateRevocationList {
     }
 
     fn get_revoked_certificate_by_serial_number(
-        &mut self,
+        &self,
         py: pyo3::Python<'_>,
         serial: &pyo3::types::PyLong,
     ) -> pyo3::PyResult<Option<RevokedCertificate>> {
@@ -379,7 +380,7 @@ impl CertificateRevocationList {
         match owned {
             Ok(o) => Ok(Some(RevokedCertificate {
                 owned: o,
-                cached_extensions: None,
+                cached_extensions: pyo3::once_cell::GILOnceCell::new(),
             })),
             Err(()) => Ok(None),
         }
@@ -464,7 +465,7 @@ impl CRLIterator {
         .ok()?;
         Some(RevokedCertificate {
             owned: revoked,
-            cached_extensions: None,
+            cached_extensions: pyo3::once_cell::GILOnceCell::new(),
         })
     }
 }
@@ -489,10 +490,10 @@ impl Clone for OwnedRevokedCertificate {
     }
 }
 
-#[pyo3::prelude::pyclass(module = "cryptography.hazmat.bindings._rust.x509")]
+#[pyo3::prelude::pyclass(frozen, module = "cryptography.hazmat.bindings._rust.x509")]
 struct RevokedCertificate {
     owned: OwnedRevokedCertificate,
-    cached_extensions: Option<pyo3::PyObject>,
+    cached_extensions: pyo3::once_cell::GILOnceCell<pyo3::PyObject>,
 }
 
 #[pyo3::prelude::pymethods]
@@ -514,12 +515,12 @@ impl RevokedCertificate {
     }
 
     #[getter]
-    fn extensions(&mut self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn extensions(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         x509::parse_and_cache_extensions(
             py,
-            &mut self.cached_extensions,
+            &self.cached_extensions,
             &self.owned.borrow_dependent().raw_crl_entry_extensions,
-            |oid, ext_data| parse_crl_entry_ext(py, oid.clone(), ext_data),
+            |ext| parse_crl_entry_ext(py, ext),
         )
     }
 }
@@ -556,13 +557,12 @@ pub(crate) fn parse_crl_reason_flags<'p>(
 
 pub fn parse_crl_entry_ext<'p>(
     py: pyo3::Python<'p>,
-    oid: asn1::ObjectIdentifier,
-    data: &[u8],
+    ext: &Extension<'_>,
 ) -> CryptographyResult<Option<&'p pyo3::PyAny>> {
     let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
-    match oid {
+    match ext.extn_id {
         oid::CRL_REASON_OID => {
-            let flags = parse_crl_reason_flags(py, &asn1::parse_single::<crl::CRLReason>(data)?)?;
+            let flags = parse_crl_reason_flags(py, &ext.value::<crl::CRLReason>()?)?;
             Ok(Some(
                 x509_module
                     .getattr(pyo3::intern!(py, "CRLReason"))?
@@ -570,7 +570,7 @@ pub fn parse_crl_entry_ext<'p>(
             ))
         }
         oid::CERTIFICATE_ISSUER_OID => {
-            let gn_seq = asn1::parse_single::<asn1::SequenceOf<'_, name::GeneralName<'_>>>(data)?;
+            let gn_seq = ext.value::<asn1::SequenceOf<'_, name::GeneralName<'_>>>()?;
             let gns = x509::parse_general_names(py, &gn_seq)?;
             Ok(Some(
                 x509_module
@@ -579,7 +579,7 @@ pub fn parse_crl_entry_ext<'p>(
             ))
         }
         oid::INVALIDITY_DATE_OID => {
-            let time = asn1::parse_single::<asn1::GeneralizedTime>(data)?;
+            let time = ext.value::<asn1::GeneralizedTime>()?;
             let py_dt = x509::datetime_to_py(py, time.as_datetime())?;
             Ok(Some(
                 x509_module

@@ -1,6 +1,9 @@
 name: linkcheck
 on:
-  pull_request: {}
+  pull_request:
+    paths:
+      - docs/conf.py
+      - .github/workflows/linkcheck.yml
   push:
     branches:
       - main
@@ -9,24 +12,20 @@ permissions:
   contents: read
 
 env:
-  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
   CARGO_INCREMENTAL: 0
 
 jobs:
   docs-linkcheck:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && contains(github.event.pull_request.title, 'linkcheck'))
     runs-on: ubuntu-latest
     name: "linkcheck"
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3.5.3
+      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
           persist-credentials: false
       - name: Setup python
         id: setup-python
-        uses: actions/setup-python@v4.6.1
+        uses: actions/setup-python@61a6322f88396a6271a6ee3565807d608ecaddd1 # v4.7.0
         with:
           python-version: 3.11
       - name: Cache rust and pip

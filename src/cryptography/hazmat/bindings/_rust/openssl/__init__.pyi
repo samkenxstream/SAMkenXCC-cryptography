@@ -5,14 +5,17 @@
 import typing
 
 from cryptography.hazmat.bindings._rust.openssl import (
+    aead,
     dh,
     dsa,
+    ec,
     ed448,
     ed25519,
     hashes,
     hmac,
     kdf,
     poly1305,
+    rsa,
     x448,
     x25519,
 )
@@ -20,13 +23,16 @@ from cryptography.hazmat.bindings._rust.openssl import (
 __all__ = [
     "openssl_version",
     "raise_openssl_error",
+    "aead",
     "dh",
     "dsa",
+    "ec",
     "hashes",
     "hmac",
     "kdf",
     "ed448",
     "ed25519",
+    "rsa",
     "poly1305",
     "x448",
     "x25519",
@@ -34,7 +40,7 @@ __all__ = [
 
 def openssl_version() -> int: ...
 def raise_openssl_error() -> typing.NoReturn: ...
-def capture_error_stack() -> typing.List[OpenSSLError]: ...
+def capture_error_stack() -> list[OpenSSLError]: ...
 def is_fips_enabled() -> bool: ...
 
 class OpenSSLError:

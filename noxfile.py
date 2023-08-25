@@ -10,7 +10,6 @@ import json
 import pathlib
 import re
 import sys
-import typing
 import uuid
 
 import nox
@@ -64,6 +63,11 @@ def tests(session: nox.Session) -> None:
     else:
         cov_args = []
 
+    if session.posargs:
+        tests = session.posargs
+    else:
+        tests = ["tests/"]
+
     session.run(
         "pytest",
         "-n",
@@ -71,8 +75,7 @@ def tests(session: nox.Session) -> None:
         "--dist=worksteal",
         *cov_args,
         "--durations=10",
-        *session.posargs,
-        "tests/",
+        *tests,
     )
 
     if session.name != "tests-nocoverage":
@@ -177,11 +180,16 @@ def rust(session: nox.Session) -> None:
         }
     )
 
-    install(session, ".")
+    # Just install the dependencies needed for the Rust build.rs
+    # TODO: Ideally there'd be a pip flag to install just our dependencies,
+    # but not install us.
+    install(session, "cffi")
 
     with session.chdir("src/rust/"):
         session.run("cargo", "fmt", "--all", "--", "--check", external=True)
-        session.run("cargo", "clippy", "--", "-D", "warnings", external=True)
+        session.run(
+            "cargo", "clippy", "--all", "--", "-D", "warnings", external=True
+        )
 
         build_output = session.run(
             "cargo",
@@ -218,7 +226,7 @@ BIN_EXT = ".exe" if sys.platform == "win32" else ""
 
 def process_rust_coverage(
     session: nox.Session,
-    rust_binaries: typing.List[str],
+    rust_binaries: list[str],
     prof_raw_location: pathlib.Path,
 ) -> None:
     # Hitting weird issues merging Windows and Linux Rust coverage, so just

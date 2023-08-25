@@ -6,8 +6,10 @@ use crate::asn1::{oid_to_py_oid, py_oid_to_oid};
 use crate::error::{CryptographyError, CryptographyResult};
 use crate::{exceptions, x509};
 use cryptography_x509::common::{Asn1ReadableOrWritable, AttributeTypeValue, RawTlv};
-use cryptography_x509::extensions::{AccessDescription, Extension, Extensions, RawExtensions};
-use cryptography_x509::name::{GeneralName, Name, OtherName, UnvalidatedIA5String};
+use cryptography_x509::extensions::{
+    AccessDescription, DuplicateExtensionsError, Extension, Extensions, RawExtensions,
+};
+use cryptography_x509::name::{GeneralName, Name, NameReadable, OtherName, UnvalidatedIA5String};
 use pyo3::types::IntoPyDict;
 use pyo3::{IntoPy, ToPyObject};
 
@@ -173,11 +175,11 @@ pub(crate) fn encode_access_descriptions<'a>(
 
 pub(crate) fn parse_name<'p>(
     py: pyo3::Python<'p>,
-    name: &Name<'_>,
+    name: &NameReadable<'_>,
 ) -> Result<&'p pyo3::PyAny, CryptographyError> {
     let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
     let py_rdns = pyo3::types::PyList::empty(py);
-    for rdn in name.unwrap_read().clone() {
+    for rdn in name.clone() {
         let py_rdn = parse_rdn(py, &rdn)?;
         py_rdns.append(py_rdn)?;
     }
@@ -272,7 +274,7 @@ pub(crate) fn parse_general_name(
             .call_method1(pyo3::intern!(py, "_init_without_validation"), (data.0,))?
             .to_object(py),
         GeneralName::DirectoryName(data) => {
-            let py_name = parse_name(py, &data)?;
+            let py_name = parse_name(py, data.unwrap_read())?;
             x509_module
                 .call_method1(pyo3::intern!(py, "DirectoryName"), (py_name,))?
                 .to_object(py)
@@ -382,53 +384,49 @@ fn ipv6_netmask(num: u128) -> Result<u32, CryptographyError> {
 
 pub(crate) fn parse_and_cache_extensions<
     'p,
-    F: Fn(&asn1::ObjectIdentifier, &[u8]) -> Result<Option<&'p pyo3::PyAny>, CryptographyError>,
+    F: Fn(&Extension<'_>) -> Result<Option<&'p pyo3::PyAny>, CryptographyError>,
 >(
     py: pyo3::Python<'p>,
-    cached_extensions: &mut Option<pyo3::PyObject>,
+    cached_extensions: &pyo3::once_cell::GILOnceCell<pyo3::PyObject>,
     raw_extensions: &Option<RawExtensions<'_>>,
     parse_ext: F,
 ) -> pyo3::PyResult<pyo3::PyObject> {
-    if let Some(cached) = cached_extensions {
-        return Ok(cached.clone_ref(py));
-    }
-
-    let extensions = match Extensions::from_raw_extensions(raw_extensions.as_ref()) {
-        Ok(extensions) => extensions,
-        Err(oid) => {
-            let oid_obj = oid_to_py_oid(py, &oid)?;
-            return Err(exceptions::DuplicateExtension::new_err((
-                format!("Duplicate {} extension found", oid),
-                oid_obj.into_py(py),
-            )));
-        }
-    };
-
-    let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
-    let exts = pyo3::types::PyList::empty(py);
-    if let Some(extensions) = extensions.as_raw() {
-        for raw_ext in extensions.unwrap_read().clone() {
-            let oid_obj = oid_to_py_oid(py, &raw_ext.extn_id)?;
-
-            let extn_value = match parse_ext(&raw_ext.extn_id, raw_ext.extn_value)? {
-                Some(e) => e,
-                None => x509_module.call_method1(
-                    pyo3::intern!(py, "UnrecognizedExtension"),
-                    (oid_obj, raw_ext.extn_value),
-                )?,
+    cached_extensions
+        .get_or_try_init(py, || {
+            let extensions = match Extensions::from_raw_extensions(raw_extensions.as_ref()) {
+                Ok(extensions) => extensions,
+                Err(DuplicateExtensionsError(oid)) => {
+                    let oid_obj = oid_to_py_oid(py, &oid)?;
+                    return Err(exceptions::DuplicateExtension::new_err((
+                        format!("Duplicate {} extension found", &oid),
+                        oid_obj.into_py(py),
+                    )));
+                }
             };
-            let ext_obj = x509_module.call_method1(
-                pyo3::intern!(py, "Extension"),
-                (oid_obj, raw_ext.critical, extn_value),
-            )?;
-            exts.append(ext_obj)?;
-        }
-    }
-    let extensions = x509_module
-        .call_method1(pyo3::intern!(py, "Extensions"), (exts,))?
-        .to_object(py);
-    *cached_extensions = Some(extensions.clone_ref(py));
-    Ok(extensions)
+
+            let x509_module = py.import(pyo3::intern!(py, "cryptography.x509"))?;
+            let exts = pyo3::types::PyList::empty(py);
+            for raw_ext in extensions.iter() {
+                let oid_obj = oid_to_py_oid(py, &raw_ext.extn_id)?;
+
+                let extn_value = match parse_ext(&raw_ext)? {
+                    Some(e) => e,
+                    None => x509_module.call_method1(
+                        pyo3::intern!(py, "UnrecognizedExtension"),
+                        (oid_obj, raw_ext.extn_value),
+                    )?,
+                };
+                let ext_obj = x509_module.call_method1(
+                    pyo3::intern!(py, "Extension"),
+                    (oid_obj, raw_ext.critical, extn_value),
+                )?;
+                exts.append(ext_obj)?;
+            }
+            Ok(x509_module
+                .call_method1(pyo3::intern!(py, "Extensions"), (exts,))?
+                .to_object(py))
+        })
+        .map(|p| p.clone_ref(py))
 }
 
 pub(crate) fn encode_extensions<
@@ -542,11 +540,16 @@ pub(crate) fn py_to_datetime(
 }
 
 pub(crate) fn datetime_now(py: pyo3::Python<'_>) -> pyo3::PyResult<asn1::DateTime> {
+    let datetime_module = py.import(pyo3::intern!(py, "datetime"))?;
+    let utc = datetime_module
+        .getattr(pyo3::intern!(py, "timezone"))?
+        .getattr(pyo3::intern!(py, "utc"))?;
+
     py_to_datetime(
         py,
-        py.import(pyo3::intern!(py, "datetime"))?
+        datetime_module
             .getattr(pyo3::intern!(py, "datetime"))?
-            .call_method0(pyo3::intern!(py, "utcnow"))?,
+            .call_method1(pyo3::intern!(py, "now"), (utc,))?,
     )
 }
 

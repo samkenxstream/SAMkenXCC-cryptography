@@ -3,6 +3,7 @@
 # for complete details.
 
 
+import copy
 import itertools
 import os
 import typing
@@ -397,6 +398,16 @@ class TestDSA:
         assert key1 != object()
         with pytest.raises(TypeError):
             key1 < key2  # type: ignore[operator]
+
+    def test_public_key_copy(self):
+        key_bytes = load_vectors_from_file(
+            os.path.join("asymmetric", "PKCS8", "unenc-dsa-pkcs8.pem"),
+            lambda pemfile: pemfile.read().encode(),
+        )
+        key1 = serialization.load_pem_private_key(key_bytes, None).public_key()
+        key2 = copy.copy(key1)
+
+        assert key1 == key2
 
 
 @pytest.mark.supported(
@@ -988,9 +999,7 @@ class TestDSAPEMPublicKeySerialization:
                 serialization.PublicFormat.SubjectPublicKeyInfo,
             ),
             (serialization.Encoding.Raw, serialization.PublicFormat.PKCS1),
-        ]
-        + list(
-            itertools.product(
+            *itertools.product(
                 [
                     serialization.Encoding.Raw,
                     serialization.Encoding.X962,
@@ -1002,8 +1011,8 @@ class TestDSAPEMPublicKeySerialization:
                     serialization.PublicFormat.UncompressedPoint,
                     serialization.PublicFormat.CompressedPoint,
                 ],
-            )
-        ),
+            ),
+        ],
     )
     def test_public_bytes_rejects_invalid(self, encoding, fmt, backend):
         key = DSA_KEY_2048.private_key(backend).public_key()

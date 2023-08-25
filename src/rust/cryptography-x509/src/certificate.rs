@@ -4,17 +4,37 @@
 
 use crate::common;
 use crate::extensions;
+use crate::extensions::DuplicateExtensionsError;
 use crate::extensions::Extensions;
 use crate::name;
+use crate::name::NameReadable;
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Clone)]
+#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Eq, Clone)]
 pub struct Certificate<'a> {
     pub tbs_cert: TbsCertificate<'a>,
     pub signature_alg: common::AlgorithmIdentifier<'a>,
     pub signature: asn1::BitString<'a>,
 }
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Clone)]
+impl Certificate<'_> {
+    /// Returns the certificate's issuer.
+    pub fn issuer(&self) -> &NameReadable<'_> {
+        self.tbs_cert.issuer.unwrap_read()
+    }
+
+    /// Returns the certificate's subject.
+    pub fn subject(&self) -> &NameReadable<'_> {
+        self.tbs_cert.subject.unwrap_read()
+    }
+
+    /// Returns an iterable container over the certificate's extension, or
+    /// an error if the extension set contains a duplicate extension.
+    pub fn extensions(&self) -> Result<Extensions<'_>, DuplicateExtensionsError> {
+        self.tbs_cert.extensions()
+    }
+}
+
+#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Eq, Clone)]
 pub struct TbsCertificate<'a> {
     #[explicit(0)]
     #[default(0)]
@@ -35,13 +55,13 @@ pub struct TbsCertificate<'a> {
     pub raw_extensions: Option<extensions::RawExtensions<'a>>,
 }
 
-impl<'a> TbsCertificate<'a> {
-    pub fn extensions(&'a self) -> Result<Extensions<'a>, asn1::ObjectIdentifier> {
+impl TbsCertificate<'_> {
+    pub fn extensions(&self) -> Result<Extensions<'_>, DuplicateExtensionsError> {
         Extensions::from_raw_extensions(self.raw_extensions.as_ref())
     }
 }
 
-#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Clone)]
+#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Eq, Clone)]
 pub struct Validity {
     pub not_before: common::Time,
     pub not_after: common::Time,
